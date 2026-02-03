@@ -76,6 +76,15 @@ class ClubController extends ChangeNotifier {
     await _sheetsService.addAttendance(checkIn);
   }
 
+  Future<void> checkInAndPay(
+    String memberId,
+    String classType,
+    double amount,
+  ) async {
+    await recordPayment(memberId, amount, "Class Payment");
+    await checkIn(memberId, classType);
+  }
+
   void _recalculateBalances() {
     _memberBalances = {};
 

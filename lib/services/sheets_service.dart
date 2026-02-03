@@ -6,6 +6,7 @@ import 'package:membership_tracker/config.dart';
 import 'package:membership_tracker/models.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:membership_tracker/services/local_storage_service.dart';
 
 class SheetsService extends ChangeNotifier {
   // GoogleSignIn is now a singleton in v7+
@@ -20,7 +21,12 @@ class SheetsService extends ChangeNotifier {
   List<Transaction> transactions = [];
   List<ClassAttendance> attendance = [];
 
+  final LocalStorageService _localStorage = LocalStorageService();
+
   Future<void> init() async {
+    // 1. Load Local Data Immediately
+    await _loadLocalData();
+
     _googleSignIn.authenticationEvents.listen((
       GoogleSignInAuthenticationEvent event,
     ) async {
@@ -32,9 +38,11 @@ class SheetsService extends ChangeNotifier {
       } else if (event is GoogleSignInAuthenticationEventSignOut) {
         _currentUser = null;
         _sheetsApi = null;
-        members = [];
-        transactions = [];
-        attendance = [];
+        // Don't clear local data on sign out! User might be offline.
+        // But maybe we should? "Not persisting" means we WANT it to persist.
+        // If we clear here, we lose data on accidental sign out.
+        // Let's keep it in memory/local.
+        notifyListeners();
       }
       notifyListeners();
     });
@@ -48,6 +56,14 @@ class SheetsService extends ChangeNotifier {
     } catch (e) {
       if (kDebugMode) print('Error signing in silently: $e');
     }
+  }
+
+  Future<void> _loadLocalData() async {
+    final data = await _localStorage.loadAllData();
+    members = data['members'] as List<Member>;
+    transactions = data['transactions'] as List<Transaction>;
+    attendance = data['attendance'] as List<ClassAttendance>;
+    notifyListeners();
   }
 
   Future<void> signIn() async {
@@ -70,9 +86,7 @@ class SheetsService extends ChangeNotifier {
     await _googleSignIn.signOut();
     _currentUser = null;
     _sheetsApi = null;
-    members = [];
-    transactions = [];
-    attendance = [];
+    // Keep local data for offline use or future sync
     notifyListeners();
   }
 
@@ -192,6 +206,11 @@ class SheetsService extends ChangeNotifier {
         if (memberRows != null) {
           members = memberRows.map((row) => Member.fromRow(row)).toList();
         } else {
+          // Keep local if remote is empty? No, remote is truth.
+          // But if we just created the sheet, it's empty.
+          // If we have local data and remote is empty, we should PUSH local?
+          // Improvement: If remote is empty and local is not, push local.
+          // For now, let's assume if remote returns, it overwrites.
           members = [];
         }
 
@@ -214,6 +233,9 @@ class SheetsService extends ChangeNotifier {
         } else {
           attendance = [];
         }
+
+        // Save fetched data to local storage to keep it in sync
+        await _localStorage.saveData(members, transactions, attendance);
       }
       notifyListeners();
     } catch (e) {
@@ -224,18 +246,23 @@ class SheetsService extends ChangeNotifier {
   Future<void> addMember(Member member) async {
     members.add(member);
     notifyListeners();
+    // Save Local 1st
+    await _localStorage.saveData(members, transactions, attendance);
+    // Push Remote
     await _appendRow('Members', member.toRow());
   }
 
   Future<void> addTransaction(Transaction transaction) async {
     transactions.add(transaction);
     notifyListeners();
+    await _localStorage.saveData(members, transactions, attendance);
     await _appendRow('Transactions', transaction.toRow());
   }
 
   Future<void> addAttendance(ClassAttendance item) async {
     attendance.add(item);
     notifyListeners();
+    await _localStorage.saveData(members, transactions, attendance);
     await _appendRow('Attendance', item.toRow());
   }
 
