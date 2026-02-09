@@ -3,8 +3,12 @@ import 'package:membership_tracker/controllers/club_controller.dart';
 import 'package:membership_tracker/models.dart';
 import 'package:membership_tracker/services/sheets_service.dart';
 
+import 'package:google_sign_in/google_sign_in.dart';
+
 // Mock Service
 class FakeSheetsService extends SheetsService {
+  FakeSheetsService() : super(googleSignIn: GoogleSignIn(clientId: 'fake'));
+
   @override
   bool get isSignedIn => true;
 
@@ -12,9 +16,21 @@ class FakeSheetsService extends SheetsService {
   Future<void> init() async {} // Do nothing
 
   @override
+  Future<void> fetchAllData() async {}
+
+  @override
   Future<void> addMember(Member m) async {
     members.add(m);
     notifyListeners();
+  }
+
+  @override
+  Future<void> updateMember(Member m) async {
+    final index = members.indexWhere((existing) => existing.id == m.id);
+    if (index != -1) {
+      members[index] = m;
+      notifyListeners();
+    }
   }
 
   @override
@@ -28,10 +44,25 @@ class FakeSheetsService extends SheetsService {
     attendance.add(a);
     notifyListeners();
   }
+
+  @override
+  Future<void> addClassSession(ClassSession s) async {
+    classSessions.add(s);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> updateClassSession(ClassSession s) async {
+    final index = classSessions.indexWhere((existing) => existing.id == s.id);
+    if (index != -1) {
+      classSessions[index] = s;
+      notifyListeners();
+    }
+  }
 }
 
 void main() {
-  group('Pricing Verification', () {
+  group('Pricing Verification (Refactored)', () {
     late ClubController controller;
     late FakeSheetsService service;
 
@@ -52,71 +83,61 @@ void main() {
       );
     });
 
-    test('Wednesday Single Class Cost', () {
-      // Wednesday: 2023-10-25 (Wednesday)
-      final wed = DateTime(2023, 10, 25, 10, 0);
+    test('Single Class Cost', () {
+      final now = DateTime.now();
 
       service.attendance.add(
         ClassAttendance(
           id: 'a1',
           memberId: '1',
-          date: wed,
-          classType: 'Wednesday1',
+          date: now,
+          classSessionId: 'session_1',
         ),
       );
 
       // Trigger update
-      // Logic is private _recalculateBalances called on listener.
-      // But verify logic is inside _recalculateBalances which populates _memberBalances (private).
-      // We check via getMemberBalance
-
-      // Reflection or modifying controller to expose recalc?
-      // Actually controller listens to service. When we added to service list, we didn't call notifyListeners on service unless we used the methods.
-      // FakeService methods call notifyListeners.
-
-      // Force notify
       service.notifyListeners();
 
       final balance = controller.getMemberBalance('1');
       expect(balance, -10.0);
     });
 
-    test('Wednesday Double Class Cost (2 for 1)', () {
-      final wed1 = DateTime(2023, 10, 25, 10, 0); // Class 1
-      final wed2 = DateTime(2023, 10, 25, 11, 0); // Class 2
+    test('Two Classes Same Day (No Bundling)', () {
+      // Logic changed: No longer 2-for-1. Should be 2 charges.
+      final now = DateTime.now();
 
       service.attendance.add(
         ClassAttendance(
           id: 'a1',
           memberId: '1',
-          date: wed1,
-          classType: 'Wednesday1',
+          date: now,
+          classSessionId: 'session_1',
         ),
       );
       service.attendance.add(
         ClassAttendance(
           id: 'a2',
           memberId: '1',
-          date: wed2,
-          classType: 'Wednesday2',
+          date: now,
+          classSessionId: 'session_2',
         ),
       );
 
       service.notifyListeners(); // Update controller
 
       final balance = controller.getMemberBalance('1');
-      expect(balance, -10.0); // Should still be -10
+      expect(balance, -20.0); // 2 * -10
     });
 
-    test('Friday Class Cost', () {
-      final fri = DateTime(2023, 10, 27, 10, 0); // Friday
+    test('Legacy Attendance (No Session ID) still charges', () {
+      final now = DateTime.now();
 
       service.attendance.add(
         ClassAttendance(
           id: 'a1',
           memberId: '1',
-          date: fri,
-          classType: 'Friday',
+          date: now,
+          classType: 'LegacyClass', // No session ID
         ),
       );
 
@@ -124,33 +145,6 @@ void main() {
 
       final balance = controller.getMemberBalance('1');
       expect(balance, -10.0);
-    });
-
-    test('Wed + Fri Cost', () {
-      final wed = DateTime(2023, 10, 25, 10, 0);
-      final fri = DateTime(2023, 10, 27, 10, 0);
-
-      service.attendance.add(
-        ClassAttendance(
-          id: 'a1',
-          memberId: '1',
-          date: wed,
-          classType: 'Wednesday1',
-        ),
-      );
-      service.attendance.add(
-        ClassAttendance(
-          id: 'a2',
-          memberId: '1',
-          date: fri,
-          classType: 'Friday',
-        ),
-      );
-
-      service.notifyListeners();
-
-      final balance = controller.getMemberBalance('1');
-      expect(balance, -20.0);
     });
   });
 }

@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
-// import 'package:googleapis_auth/googleapis_auth.dart' as auth; // Not strictly needed if we don't use it directly, but SheetsApi expects a client.
+import 'package:googleapis/drive/v3.dart' as drive;
+import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:membership_tracker/config.dart';
 import 'package:membership_tracker/models.dart';
 import 'package:http/http.dart' as http;
@@ -9,50 +10,55 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:membership_tracker/services/local_storage_service.dart';
 
 class SheetsService extends ChangeNotifier {
-  // GoogleSignIn is now a singleton in v7+
-  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  // Standard initialization
+  final GoogleSignIn _googleSignIn;
+
+  SheetsService({GoogleSignIn? googleSignIn})
+    : _googleSignIn =
+          googleSignIn ??
+          GoogleSignIn(
+            scopes: Config.scopes,
+            clientId: kIsWeb ? Config.webClientId : null,
+          );
 
   GoogleSignInAccount? _currentUser;
   sheets.SheetsApi? _sheetsApi;
-  String? _spreadsheetId; // We need to find or create this
+  drive.DriveApi? _driveApi;
+  String? _spreadsheetId;
+  String? lastError;
 
-  // Basic in-memory cache
+  // Expose Spreadsheet URL
+  String? get spreadsheetUrl => _spreadsheetId != null
+      ? 'https://docs.google.com/spreadsheets/d/$_spreadsheetId'
+      : null;
+
+  // Data
   List<Member> members = [];
   List<Transaction> transactions = [];
   List<ClassAttendance> attendance = [];
+  List<ClassSession> classSessions = [];
 
   final LocalStorageService _localStorage = LocalStorageService();
 
   Future<void> init() async {
-    // 1. Load Local Data Immediately
     await _loadLocalData();
 
-    _googleSignIn.authenticationEvents.listen((
-      GoogleSignInAuthenticationEvent event,
+    _googleSignIn.onCurrentUserChanged.listen((
+      GoogleSignInAccount? account,
     ) async {
-      if (event is GoogleSignInAuthenticationEventSignIn) {
-        _currentUser = event.user;
-        if (_currentUser != null) {
-          await _initApi();
-        }
-      } else if (event is GoogleSignInAuthenticationEventSignOut) {
-        _currentUser = null;
+      _currentUser = account;
+      if (_currentUser != null) {
+        // Automatically init API on sign in
+        await _initApi();
+      } else {
         _sheetsApi = null;
-        // Don't clear local data on sign out! User might be offline.
-        // But maybe we should? "Not persisting" means we WANT it to persist.
-        // If we clear here, we lose data on accidental sign out.
-        // Let's keep it in memory/local.
-        notifyListeners();
+        _driveApi = null;
       }
       notifyListeners();
     });
 
     try {
-      await _googleSignIn.initialize(
-        clientId: kIsWeb ? Config.webClientId : null,
-      );
-      // Attempt generic sign in for non-web, or silent for web if supported
-      await _googleSignIn.attemptLightweightAuthentication();
+      await _googleSignIn.signInSilently();
     } catch (e) {
       if (kDebugMode) print('Error signing in silently: $e');
     }
@@ -63,31 +69,25 @@ class SheetsService extends ChangeNotifier {
     members = data['members'] as List<Member>;
     transactions = data['transactions'] as List<Transaction>;
     attendance = data['attendance'] as List<ClassAttendance>;
+    classSessions = data['classSessions'] as List<ClassSession>;
     notifyListeners();
   }
 
   Future<void> signIn() async {
     try {
-      // On Web, this might throw if used directly, so specific UI button is preferred.
-      // But for mobile, or if web decides to support popup flows again, we keep it.
-      if (!kIsWeb) {
-        await _googleSignIn.authenticate(scopeHint: Config.scores);
-      } else {
-        // Web flow is handled by the configured button unless "One Tap" works.
-        // We still try authenticate() just in case, but catch the unimplemented error.
-        await _googleSignIn.authenticate();
-      }
+      await _googleSignIn.signIn();
     } catch (e) {
       if (kDebugMode) print('Error signing in: $e');
     }
   }
 
   Future<void> signOut() async {
-    await _googleSignIn.signOut();
-    _currentUser = null;
-    _sheetsApi = null;
-    // Keep local data for offline use or future sync
-    notifyListeners();
+    try {
+      await _googleSignIn.disconnect();
+    } catch (e) {
+      if (kDebugMode) print("Error disconnecting: $e");
+      await _googleSignIn.signOut();
+    }
   }
 
   bool get isSignedIn => _currentUser != null;
@@ -95,36 +95,70 @@ class SheetsService extends ChangeNotifier {
   Future<void> _initApi() async {
     final httpClient = await _getAuthenticatedClient();
     if (httpClient != null) {
+      debugPrint('SheetsService: _initApi - HttpClient created');
       _sheetsApi = sheets.SheetsApi(httpClient);
+      _driveApi = drive.DriveApi(httpClient);
+      // Auto-load on init
+      await _findOrCreateSpreadsheet();
       await _findOrCreateSpreadsheet();
       await fetchAllData();
+    } else {
+      debugPrint(
+        'SheetsService: _initApi - Failed to create authenticated client (httpClient is null)',
+      );
     }
   }
 
   Future<http.Client?> _getAuthenticatedClient() async {
-    if (_currentUser == null) return null;
-    // Explicitly request headers for our scopes
-    final headers = await _currentUser!.authorizationClient
-        .authorizationHeaders(Config.scores);
-    if (headers == null) return null;
-
-    return _AuthenticatedClient(headers);
+    // Check local tracker, then fallback to the source of truth
+    final user = _currentUser ?? _googleSignIn.currentUser;
+    if (user == null) {
+      debugPrint(
+        'SheetsService: _getAuthenticatedClient - No user found (_currentUser is null, _googleSignIn.currentUser is null)',
+      );
+      return null;
+    }
+    debugPrint(
+      'SheetsService: _getAuthenticatedClient - Using user: ${user.email}',
+    );
+    try {
+      final client = await _googleSignIn.authenticatedClient();
+      if (client == null) {
+        debugPrint(
+          'SheetsService: _getAuthenticatedClient - authenticatedClient() returned null (no exception thrown)',
+        );
+      }
+      return client;
+    } catch (e) {
+      lastError = "Auth Error: $e";
+      debugPrint('SheetsService: _getAuthenticatedClient error: $e');
+      return null;
+    }
   }
 
   Future<void> _findOrCreateSpreadsheet() async {
     if (_sheetsApi == null) return;
+    lastError = null;
+    debugPrint('SheetsService: _findOrCreateSpreadsheet calling...');
 
-    // Check local storage for existing ID
-    final prefs = await SharedPreferences.getInstance();
-    _spreadsheetId = prefs.getString('spreadsheet_id');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _spreadsheetId = prefs.getString('spreadsheet_id');
 
-    if (_spreadsheetId == null) {
-      // Create a new spreadsheet
-      final spreadsheet = sheets.Spreadsheet(
-        properties: sheets.SpreadsheetProperties(title: 'MembershipTracker_DB'),
-      );
+      if (_spreadsheetId == null) {
+        _spreadsheetId = await _searchForSpreadsheet();
+        if (_spreadsheetId != null) {
+          await prefs.setString('spreadsheet_id', _spreadsheetId!);
+        }
+      }
 
-      try {
+      if (_spreadsheetId == null) {
+        final spreadsheet = sheets.Spreadsheet(
+          properties: sheets.SpreadsheetProperties(
+            title: 'MembershipTracker_DB',
+          ),
+        );
+
         final created = await _sheetsApi!.spreadsheets.create(spreadsheet);
         _spreadsheetId = created.spreadsheetId;
 
@@ -132,16 +166,34 @@ class SheetsService extends ChangeNotifier {
           await prefs.setString('spreadsheet_id', _spreadsheetId!);
           await _initializeSheetStructure();
         }
-      } catch (e) {
-        if (kDebugMode) print('Error creating spreadsheet: $e');
       }
+    } catch (e) {
+      lastError = "Sync Error: $e";
+      if (kDebugMode) print('Error in _findOrCreateSpreadsheet: $e');
+      notifyListeners();
     }
+  }
+
+  Future<String?> _searchForSpreadsheet() async {
+    if (_driveApi == null) return null;
+    try {
+      final fileList = await _driveApi!.files.list(
+        q: "name = 'MembershipTracker_DB' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false",
+        $fields: "files(id, name)",
+      );
+
+      if (fileList.files != null && fileList.files!.isNotEmpty) {
+        return fileList.files!.first.id;
+      }
+    } catch (e) {
+      if (kDebugMode) print('Error searching for spreadsheet: $e');
+    }
+    return null;
   }
 
   Future<void> _initializeSheetStructure() async {
     if (_sheetsApi == null || _spreadsheetId == null) return;
 
-    // Add headers to 'Sheet1' (rename to Members) and add other sheets
     final requests = [
       sheets.Request(
         updateSheetProperties: sheets.UpdateSheetPropertiesRequest(
@@ -159,6 +211,11 @@ class SheetsService extends ChangeNotifier {
           properties: sheets.SheetProperties(title: 'Attendance'),
         ),
       ),
+      sheets.Request(
+        addSheet: sheets.AddSheetRequest(
+          properties: sheets.SheetProperties(title: 'ClassSessions'),
+        ),
+      ),
     ];
 
     final batchRequest = sheets.BatchUpdateSpreadsheetRequest(
@@ -167,7 +224,6 @@ class SheetsService extends ChangeNotifier {
     try {
       await _sheetsApi!.spreadsheets.batchUpdate(batchRequest, _spreadsheetId!);
 
-      // Append Headers
       await _appendRow('Members', [
         'ID',
         'FirstName',
@@ -182,93 +238,246 @@ class SheetsService extends ChangeNotifier {
         'Amount',
         'Date',
         'Description',
+        'ClassSessionID',
       ]);
-      await _appendRow('Attendance', ['ID', 'MemberID', 'Date', 'ClassType']);
+      await _appendRow('Attendance', [
+        'ID',
+        'MemberID',
+        'Date',
+        'ClassType',
+        'ClassSessionID',
+      ]);
+      await _appendRow('ClassSessions', [
+        'ID',
+        'Name',
+        'DateTime',
+        'IsCompleted',
+      ]);
     } catch (e) {
       if (kDebugMode) print('Error initializing sheets: $e');
     }
   }
 
   Future<void> fetchAllData() async {
-    if (_sheetsApi == null || _spreadsheetId == null) return;
+    debugPrint('SheetsService: fetchAllData called');
+
+    // Lazy initialization
+    if (_sheetsApi == null && _currentUser != null) {
+      debugPrint(
+        'SheetsService: API not ready, attempting lazy initialization...',
+      );
+      await _initApi();
+    }
+
+    // Interactive fallback if lazy init failed
+    if (_sheetsApi == null) {
+      debugPrint(
+        'SheetsService: API still not ready after lazy init. Triggering interactive sign-in...',
+      );
+      try {
+        final account = await _googleSignIn.signIn();
+        debugPrint(
+          'SheetsService: Interactive sign-in returned account: ${account?.email}',
+        );
+
+        // Update local reference immediately to be safe
+        _currentUser = account;
+        // Try init again with fresh credentials
+        await _initApi();
+
+        // If still null, try requesting scopes explicitly (Web fix)
+        if (_sheetsApi == null) {
+          debugPrint(
+            'SheetsService: API still not ready. Attempting to request scopes explicitly...',
+          );
+          final granted = await _googleSignIn.requestScopes(Config.scopes);
+          debugPrint('SheetsService: Scopes granted: $granted');
+          if (granted) {
+            await _initApi();
+          }
+        }
+      } catch (e) {
+        debugPrint('SheetsService: Interactive sign-in failed: $e');
+      }
+    }
+
+    if (_sheetsApi == null || _spreadsheetId == null) {
+      debugPrint(
+        'SheetsService: fetchAllData aboring. _sheetsApi is ${_sheetsApi == null ? 'null' : 'ok'}, _spreadsheetId is $_spreadsheetId',
+      );
+      return;
+    }
 
     try {
-      // Fetch data starting from row 2 (skipping headers)
-      final ranges = ['Members!A2:G', 'Transactions!A2:E', 'Attendance!A2:D'];
+      final ranges = [
+        'Members!A2:G',
+        'Transactions!A2:E',
+        'Attendance!A2:E',
+        'ClassSessions!A2:D',
+      ];
+      debugPrint(
+        'SheetsService: Requesting ranges: $ranges from spreadsheet $_spreadsheetId',
+      );
+
       final response = await _sheetsApi!.spreadsheets.values.batchGet(
         _spreadsheetId!,
         ranges: ranges,
       );
 
       if (response.valueRanges != null) {
-        // Members
+        debugPrint(
+          'SheetsService: Received ${response.valueRanges!.length} value ranges',
+        );
         final memberRows = response.valueRanges![0].values;
-        if (memberRows != null) {
-          members = memberRows.map((row) => Member.fromRow(row)).toList();
-        } else {
-          // Keep local if remote is empty? No, remote is truth.
-          // But if we just created the sheet, it's empty.
-          // If we have local data and remote is empty, we should PUSH local?
-          // Improvement: If remote is empty and local is not, push local.
-          // For now, let's assume if remote returns, it overwrites.
-          members = [];
-        }
+        members = memberRows != null
+            ? memberRows.map((row) => Member.fromRow(row)).toList()
+            : [];
 
-        // Transactions
         final transactionRows = response.valueRanges![1].values;
-        if (transactionRows != null) {
-          transactions = transactionRows
-              .map((row) => Transaction.fromRow(row))
-              .toList();
-        } else {
-          transactions = [];
-        }
+        transactions = transactionRows != null
+            ? transactionRows.map((row) => Transaction.fromRow(row)).toList()
+            : [];
 
-        // Attendance
         final attendanceRows = response.valueRanges![2].values;
-        if (attendanceRows != null) {
-          attendance = attendanceRows
-              .map((row) => ClassAttendance.fromRow(row))
-              .toList();
-        } else {
-          attendance = [];
+        attendance = attendanceRows != null
+            ? attendanceRows.map((row) => ClassAttendance.fromRow(row)).toList()
+            : [];
+
+        if (response.valueRanges!.length > 3) {
+          final sessionRows = response.valueRanges![3].values;
+          classSessions = sessionRows != null
+              ? sessionRows.map((row) => ClassSession.fromRow(row)).toList()
+              : [];
         }
 
-        // Save fetched data to local storage to keep it in sync
-        await _localStorage.saveData(members, transactions, attendance);
+        await _localStorage.saveData(
+          members,
+          transactions,
+          attendance,
+          classSessions,
+        );
       }
       notifyListeners();
-    } catch (e) {
-      if (kDebugMode) print('Error fetching data: $e');
+      debugPrint(
+        'SheetsService: fetchAllData completed successfully. Members: ${members.length}, Transactions: ${transactions.length}',
+      );
+    } catch (e, stack) {
+      debugPrint('SheetsService: Error fetching data: $e');
+      debugPrint(stack.toString());
     }
   }
 
+  // Helper methods to save and append
   Future<void> addMember(Member member) async {
     members.add(member);
     notifyListeners();
-    // Save Local 1st
-    await _localStorage.saveData(members, transactions, attendance);
-    // Push Remote
+    await _localStorage.saveData(
+      members,
+      transactions,
+      attendance,
+      classSessions,
+    );
     await _appendRow('Members', member.toRow());
   }
 
   Future<void> addTransaction(Transaction transaction) async {
     transactions.add(transaction);
     notifyListeners();
-    await _localStorage.saveData(members, transactions, attendance);
+    await _localStorage.saveData(
+      members,
+      transactions,
+      attendance,
+      classSessions,
+    );
     await _appendRow('Transactions', transaction.toRow());
   }
 
   Future<void> addAttendance(ClassAttendance item) async {
     attendance.add(item);
     notifyListeners();
-    await _localStorage.saveData(members, transactions, attendance);
+    await _localStorage.saveData(
+      members,
+      transactions,
+      attendance,
+      classSessions,
+    );
     await _appendRow('Attendance', item.toRow());
+  }
+
+  Future<void> addClassSession(ClassSession session) async {
+    classSessions.add(session);
+    notifyListeners();
+    await _localStorage.saveData(
+      members,
+      transactions,
+      attendance,
+      classSessions,
+    );
+    await _appendRow('ClassSessions', session.toRow());
+  }
+
+  Future<void> updateClassSession(ClassSession session) async {
+    final index = classSessions.indexWhere((s) => s.id == session.id);
+    if (index != -1) {
+      classSessions[index] = session;
+      notifyListeners();
+      await _localStorage.saveData(
+        members,
+        transactions,
+        attendance,
+        classSessions,
+      );
+
+      if (_sheetsApi != null && _spreadsheetId != null) {
+        final rowIndex = index + 2;
+        final range = 'ClassSessions!A$rowIndex:D$rowIndex';
+        final valueRange = sheets.ValueRange(values: [session.toRow()]);
+        try {
+          await _sheetsApi!.spreadsheets.values.update(
+            valueRange,
+            _spreadsheetId!,
+            range,
+            valueInputOption: 'USER_ENTERED',
+          );
+        } catch (e) {
+          if (kDebugMode) print('Error updating class session: $e');
+        }
+      }
+    }
+  }
+
+  Future<void> updateMember(Member member) async {
+    final index = members.indexWhere((m) => m.id == member.id);
+    if (index != -1) {
+      members[index] = member;
+      notifyListeners();
+      await _localStorage.saveData(
+        members,
+        transactions,
+        attendance,
+        classSessions,
+      );
+
+      if (_sheetsApi != null && _spreadsheetId != null) {
+        final rowIndex = index + 2;
+        final range = 'Members!A$rowIndex:G$rowIndex';
+        final valueRange = sheets.ValueRange(values: [member.toRow()]);
+        try {
+          await _sheetsApi!.spreadsheets.values.update(
+            valueRange,
+            _spreadsheetId!,
+            range,
+            valueInputOption: 'USER_ENTERED',
+          );
+        } catch (e) {
+          if (kDebugMode) print('Error updating member: $e');
+        }
+      }
+    }
   }
 
   Future<void> _appendRow(String range, List<dynamic> row) async {
     if (_sheetsApi == null || _spreadsheetId == null) return;
-
     final valueRange = sheets.ValueRange(values: [row]);
     try {
       await _sheetsApi!.spreadsheets.values.append(
@@ -280,18 +489,5 @@ class SheetsService extends ChangeNotifier {
     } catch (e) {
       if (kDebugMode) print('Error appending row to $range: $e');
     }
-  }
-}
-
-class _AuthenticatedClient extends http.BaseClient {
-  final Map<String, String> _headers;
-  final http.Client _client = http.Client();
-
-  _AuthenticatedClient(this._headers);
-
-  @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) {
-    request.headers.addAll(_headers);
-    return _client.send(request);
   }
 }

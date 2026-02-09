@@ -6,6 +6,7 @@ class LocalStorageService {
   static const String _membersKey = 'local_members_data';
   static const String _transactionsKey = 'local_transactions_data';
   static const String _attendanceKey = 'local_attendance_data';
+  static const String _classSessionsKey = 'local_class_sessions_data';
 
   Future<void> saveMembers(List<Member> members) async {
     final prefs = await SharedPreferences.getInstance();
@@ -37,6 +38,7 @@ class LocalStorageService {
     List<Member> members,
     List<Transaction> transactions,
     List<ClassAttendance> attendance,
+    List<ClassSession> classSessions,
   ) async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -51,6 +53,10 @@ class LocalStorageService {
     // Save Attendance
     final attendanceRows = attendance.map((a) => a.toRow()).toList();
     await prefs.setString(_attendanceKey, json.encode(attendanceRows));
+
+    // Save Class Sessions
+    final sessionRows = classSessions.map((s) => s.toRow()).toList();
+    await prefs.setString(_classSessionsKey, json.encode(sessionRows));
   }
 
   Future<Map<String, List<dynamic>>> loadAllData() async {
@@ -59,10 +65,12 @@ class LocalStorageService {
     final membersStr = prefs.getString(_membersKey);
     final transactionsStr = prefs.getString(_transactionsKey);
     final attendanceStr = prefs.getString(_attendanceKey);
+    final classSessionsStr = prefs.getString(_classSessionsKey);
 
     List<Member> members = [];
     List<Transaction> transactions = [];
     List<ClassAttendance> attendance = [];
+    List<ClassSession> classSessions = [];
 
     if (membersStr != null) {
       try {
@@ -85,10 +93,18 @@ class LocalStorageService {
       } catch (_) {}
     }
 
+    if (classSessionsStr != null) {
+      try {
+        final List<dynamic> rows = json.decode(classSessionsStr);
+        classSessions = rows.map((r) => ClassSession.fromRow(r)).toList();
+      } catch (_) {}
+    }
+
     return {
       'members': members,
       'transactions': transactions,
       'attendance': attendance,
+      'classSessions': classSessions,
     };
   }
 }

@@ -3,6 +3,7 @@ import 'package:membership_tracker/controllers/club_controller.dart';
 import 'package:membership_tracker/screens/attendance_screen.dart';
 import 'package:membership_tracker/screens/financials_screen.dart';
 import 'package:membership_tracker/screens/members_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class DashboardScreen extends StatelessWidget {
   final ClubController controller;
@@ -40,6 +41,17 @@ class DashboardScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (controller.lastError != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                color: Colors.red.shade100,
+                child: Text(
+                  controller.lastError!,
+                  style: TextStyle(color: Colors.red.shade900),
+                ),
+              ),
             _buildStatCard(
               context,
               "Total Members",
@@ -101,6 +113,45 @@ class DashboardScreen extends StatelessWidget {
                 ),
               ],
             ),
+            if (controller.isSignedIn) ...[
+              const SizedBox(height: 32),
+              const Divider(),
+              if (controller.isSyncing)
+                const Center(child: CircularProgressIndicator())
+              else
+                Center(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.cloud_upload),
+                    label: const Text("Sync to Google"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade50,
+                      foregroundColor: Colors.blue.shade800,
+                    ),
+                    onPressed: () {
+                      debugPrint('Dashboard: Sync button pressed');
+                      controller.sync();
+                    },
+                  ),
+                ),
+            ],
+            if (controller.spreadsheetUrl != null) ...[
+              const SizedBox(height: 16),
+              Center(
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final uri = Uri.parse(controller.spreadsheetUrl!);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(
+                        uri,
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.table_chart),
+                  label: const Text("Open Google Sheet"),
+                ),
+              ),
+            ],
           ],
         ),
       ),

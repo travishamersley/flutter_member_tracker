@@ -143,26 +143,252 @@ class _MemberDetailsScreenState extends State<MemberDetailsScreen> {
   }
 
   Widget _buildProfileTab() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          _infoRow(
-            "Date of Birth",
-            widget.member.dob.toIso8601String().split('T').first,
+    return SingleChildScrollView(
+      // Changed to ScrollView to avoid overflow
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            _infoRow(
+              "Date of Birth",
+              widget.member.dob.toIso8601String().split('T').first,
+            ),
+            _infoRow("Contact", widget.member.contactInfo),
+            _infoRow("Medical", widget.member.medicalInfo),
+
+            const Divider(height: 32),
+            _buildFamilySection(),
+
+            const SizedBox(
+              height: 32,
+            ), // Spacer replaced with sized box inside scroll view
+            OutlinedButton.icon(
+              onPressed: () {
+                // Edit Logic
+              },
+              icon: const Icon(Icons.edit),
+              label: const Text("Edit Details"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFamilySection() {
+    final familyId = widget.member.familyGroupId;
+    final List<Member> familyMembers = [];
+
+    if (familyId != null && familyId.isNotEmpty) {
+      familyMembers.addAll(
+        widget.controller.members.where((m) => m.familyGroupId == familyId),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader("Family Group"),
+        if (familyId == null || familyId.isEmpty) ...[
+          const Text("Not part of a family group."),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: () => _showCreateFamilyDialog(),
+            child: const Text("Create Family Group"),
           ),
-          _infoRow("Contact", widget.member.contactInfo),
-          _infoRow("Medical", widget.member.medicalInfo),
-          const Spacer(),
-          OutlinedButton.icon(
-            onPressed: () {
-              // Edit Logic
-            },
-            icon: const Icon(Icons.edit),
-            label: const Text("Edit Details"),
+        ] else ...[
+          Text("Family Members (${familyMembers.length})"),
+          const SizedBox(height: 8),
+          ...familyMembers.map(
+            (m) => ListTile(
+              leading: const Icon(Icons.person),
+              title: Text("${m.firstName} ${m.lastName}"),
+              subtitle: m.id == widget.member.id
+                  ? const Text("This Member")
+                  : null,
+              trailing: m.id == widget.member.id
+                  ? null
+                  : IconButton(
+                      icon: const Icon(
+                        Icons.remove_circle_outline,
+                        color: Colors.red,
+                      ),
+                      onPressed: () async {
+                        // Allow removing other members? Or just self leaving?
+                        // Let's assume we can remove others if we want, or just "Leave" self.
+                        // For now, let's keep it simple: Remove THIS member from family == Leave.
+                        // To remove another member, we'd need to go to their profile or have a specific button.
+                        // For simplicity, let's just show the list.
+                      },
+                    ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              TextButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text("Add Member"),
+                onPressed: () => _showAddMemberToFamilyDialog(familyId),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                icon: const Icon(Icons.exit_to_app, color: Colors.redAccent),
+                label: const Text(
+                  "Leave Family",
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+                onPressed: () async {
+                  await widget.controller.removeFromFamilyGroup(widget.member);
+                  setState(() {});
+                },
+              ),
+            ],
           ),
         ],
-      ),
+      ],
+    );
+  }
+
+  void _showCreateFamilyDialog() {
+    // Show list of members NOT in a family
+    final candidates = widget.controller.members
+        .where(
+          (m) =>
+              (m.familyGroupId == null || m.familyGroupId!.isEmpty) &&
+              m.id != widget.member.id,
+        )
+        .toList();
+
+    Map<String, bool> selected = {};
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text("Create Family Group"),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: candidates.isEmpty
+                    ? const Text("No other available members to add.")
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: candidates.length,
+                        itemBuilder: (context, index) {
+                          final m = candidates[index];
+                          return CheckboxListTile(
+                            title: Text("${m.firstName} ${m.lastName}"),
+                            value: selected[m.id] ?? false,
+                            onChanged: (val) {
+                              setState(() {
+                                selected[m.id] = val ?? false;
+                              });
+                            },
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text("Cancel"),
+                ),
+                if (candidates.isNotEmpty)
+                  ElevatedButton(
+                    onPressed: () async {
+                      final membersToAdd = candidates
+                          .where((m) => selected[m.id] == true)
+                          .toList();
+                      if (membersToAdd.isNotEmpty) {
+                        await widget.controller.createFamilyGroup(
+                          widget.member,
+                          membersToAdd,
+                        );
+                        if (!ctx.mounted) return;
+                        Navigator.pop(ctx);
+                        this.setState(() {});
+                      }
+                    },
+                    child: const Text("Create"),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAddMemberToFamilyDialog(String familyId) {
+    // Show list of members NOT in a family
+    final candidates = widget.controller.members
+        .where(
+          (m) =>
+              (m.familyGroupId == null || m.familyGroupId!.isEmpty) &&
+              m.id != widget.member.id,
+        )
+        .toList();
+
+    // Single select for simplicity or reuse the multi select
+    // Let's allow adding one at a time for now to keep it simple or reuse the same logic
+    // Actually, adding multiple at once is better.
+    Map<String, bool> selected = {};
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text("Add to Family"),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: candidates.isEmpty
+                    ? const Text("No available members to add.")
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: candidates.length,
+                        itemBuilder: (context, index) {
+                          final m = candidates[index];
+                          return CheckboxListTile(
+                            title: Text("${m.firstName} ${m.lastName}"),
+                            value: selected[m.id] ?? false,
+                            onChanged: (val) {
+                              setState(() {
+                                selected[m.id] = val ?? false;
+                              });
+                            },
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text("Cancel"),
+                ),
+                if (candidates.isNotEmpty)
+                  ElevatedButton(
+                    onPressed: () async {
+                      final membersToAdd = candidates
+                          .where((m) => selected[m.id] == true)
+                          .toList();
+                      for (var m in membersToAdd) {
+                        await widget.controller.addToFamilyGroup(m, familyId);
+                      }
+                      if (!ctx.mounted) return;
+                      Navigator.pop(ctx);
+                      this.setState(() {});
+                    },
+                    child: const Text("Add"),
+                  ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

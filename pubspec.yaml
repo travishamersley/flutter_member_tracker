@@ -7,15 +7,17 @@ environment:
   sdk: ^3.10.8
 
 dependencies:
-  extension_google_sign_in_as_googleapis_auth: ^3.0.0
+  extension_google_sign_in_as_googleapis_auth: ^2.0.0
   flutter:
     sdk: flutter
-  google_sign_in: ^7.2.0
-  google_sign_in_web: ^1.1.0
+  google_sign_in: ^6.2.1
+  google_sign_in_web: ^0.12.4
   googleapis: ^15.0.0
   http: ^1.6.0
+  intl: ^0.20.2
   path_provider: ^2.1.5
   shared_preferences: ^2.5.4
+  url_launcher: ^6.3.2
   uuid: ^4.5.2
 
 dev_dependencies:
