@@ -185,9 +185,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     id: '',
                     firstName: 'Unknown',
                     lastName: '',
+                    address: '',
+                    email: '',
                     dob: DateTime.now(),
-                    medicalInfo: '',
-                    contactInfo: '',
+                    mobile: '',
+                    emergencyContact: '',
+                    medicalHistory: MedicalHistory(),
+                    heardAbout: '',
                   ),
                 );
 
@@ -202,20 +206,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 // Since we don't link Transaction <-> Attendance explicitly,
                 // we'll look for transactions from this member on the SAME DAY as the session.
 
-                final sessionDate = session.dateTime;
                 final payments = widget.controller.transactions.where((t) {
                   if (t.memberId != member.id) return false;
 
-                  // New Logic: Check Session ID if available
+                  // Strict Logic: Only count payments explicitly linked to this session.
+                  // Bulk payments (null classSessionId) are ignored for this specific view.
                   if (t.classSessionId != null &&
                       t.classSessionId!.isNotEmpty) {
                     return t.classSessionId == session.id;
                   }
 
-                  // Fallback: Date match (for legacy data)
-                  return t.date.year == sessionDate.year &&
-                      t.date.month == sessionDate.month &&
-                      t.date.day == sessionDate.day;
+                  return false;
                 }).toList();
 
                 final totalPaid = payments.fold(
@@ -223,16 +224,85 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   (sum, t) => sum + t.amount,
                 );
 
-                return ListTile(
-                  title: Text("${member.firstName} ${member.lastName}"),
-                  subtitle: Text(
-                    payments.isNotEmpty
-                        ? "Paid: \$${totalPaid.toStringAsFixed(2)}"
-                        : "No payment recorded on this day",
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
                   ),
-                  trailing: payments.isNotEmpty
-                      ? const Icon(Icons.check_circle, color: Colors.green)
-                      : const Icon(Icons.warning, color: Colors.orange),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      children: [
+                        // Row 1: Name and Balance
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "${member.firstName} ${member.lastName}",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    (member.balance >= 0
+                                            ? Colors.green
+                                            : Colors.red)
+                                        .withOpacity(0.1),
+                                border: Border.all(
+                                  color: member.balance >= 0
+                                      ? Colors.green
+                                      : Colors.red,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                "Bal: \$${member.balance.toStringAsFixed(2)}",
+                                style: TextStyle(
+                                  color: member.balance >= 0
+                                      ? Colors.green
+                                      : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(),
+                        // Row 2: Financial Breakdown
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Debit
+                            const Text(
+                              "Class Fee: -\$10.00",
+                              style: TextStyle(color: Colors.red),
+                            ),
+                            // Payment
+                            if (payments.isNotEmpty)
+                              Text(
+                                "Paid: +\$${totalPaid.toStringAsFixed(2)}",
+                                style: const TextStyle(
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            else
+                              const Text(
+                                "Paid: \$0.00",
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                 );
               },
             ),

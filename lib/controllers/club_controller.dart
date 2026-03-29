@@ -62,9 +62,9 @@ class ClubController extends ChangeNotifier {
 
     try {
       // Revert to simple data fetch
-      debugPrint('ClubController: Calling _sheetsService.fetchAllData()');
-      await _sheetsService.fetchAllData();
-      debugPrint('ClubController: _sheetsService.fetchAllData() completed');
+      debugPrint('ClubController: Calling _sheetsService.syncData()');
+      await _sheetsService.syncData();
+      debugPrint('ClubController: _sheetsService.syncData() completed');
     } finally {
       isSyncing = false;
       notifyListeners();
@@ -81,16 +81,34 @@ class ClubController extends ChangeNotifier {
   Future<void> addMember(
     String firstName,
     String lastName,
+    String address,
+    String email,
     DateTime dob,
-    String medical,
-    String contact,
+    String mobile,
+    String homePhone,
+    String emergencyContact,
+    MedicalHistory medicalHistory,
+    bool hasBeenSuspended,
+    String? suspendedDetails,
+    String heardAbout,
+    String? legalGuardian,
+    bool consentSigned,
   ) async {
     final member = Member.create(
       firstName: firstName,
       lastName: lastName,
+      address: address,
+      email: email,
       dob: dob,
-      medicalInfo: medical,
-      contactInfo: contact,
+      mobile: mobile,
+      homePhone: homePhone,
+      emergencyContact: emergencyContact,
+      medicalHistory: medicalHistory,
+      hasBeenSuspended: hasBeenSuspended,
+      suspendedDetails: suspendedDetails,
+      heardAbout: heardAbout,
+      legalGuardian: legalGuardian,
+      consentSigned: consentSigned,
     );
     await _sheetsService.addMember(member);
   }
@@ -167,6 +185,7 @@ class ClubController extends ChangeNotifier {
   }
 
   void _recalculateBalances() {
+    debugPrint("Recalculating Balances...");
     _memberBalances = {};
 
     // 1. Calculate Raw Individual Balances
@@ -178,27 +197,35 @@ class ClubController extends ChangeNotifier {
     }
 
     // Add Payments
+    debugPrint("Processing ${transactions.length} transactions for balances.");
     for (var t in transactions) {
-      rawBalances[t.memberId] = (rawBalances[t.memberId] ?? 0) + t.amount;
+      if (rawBalances.containsKey(t.memberId)) {
+        rawBalances[t.memberId] = (rawBalances[t.memberId] ?? 0) + t.amount;
+      } else {
+        // Transaction for unknown member?
+        debugPrint("Warning: Transaction for unknown memberId: ${t.memberId}");
+      }
     }
 
     // Subtract Class Costs
     // New Logic: 1 Attendance = 1 Charge (classPrice)
+    debugPrint(
+      "Processing ${attendance.length} attendance records for charges.",
+    );
     for (var a in attendance) {
-      if (a.classSessionId != null && a.classSessionId!.isNotEmpty) {
-        // Valid new session attendance
-        rawBalances[a.memberId] = (rawBalances[a.memberId] ?? 0) - classPrice;
-      } else {
-        // Legacy attendance?
-        // User said "ignore legacy", but billing should ideally still work if we want to be safe,
-        // OR we just strictly follow "attendance = cost".
-        // Let's assume all attendance records that exist count as a class.
-        // If we want to strictly ignore old records for billing, we'd check if classSessionId is set.
-        // But "ignore legacy" likely meant "don't worry about complex daily caps for old data".
-        // I will charge for ALL attendance records found in the system.
-        rawBalances[a.memberId] = (rawBalances[a.memberId] ?? 0) - classPrice;
+      if (rawBalances.containsKey(a.memberId)) {
+        if (a.classSessionId != null && a.classSessionId!.isNotEmpty) {
+          // Valid new session attendance
+          rawBalances[a.memberId] = (rawBalances[a.memberId] ?? 0) - classPrice;
+        } else {
+          // Legacy attendance counts too
+          rawBalances[a.memberId] = (rawBalances[a.memberId] ?? 0) - classPrice;
+        }
       }
     }
+
+    // Debug output a few balances
+    // rawBalances.forEach((k, v) => debugPrint("Member $k Raw Balance: $v"));
 
     // 2. Aggregate by Family Group
     // Map<FamilyGroupId, TotalBalance>
@@ -220,7 +247,10 @@ class ClubController extends ChangeNotifier {
         // Individual
         _memberBalances[m.id] = rawBalances[m.id] ?? 0.0;
       }
+      // Update the member object's ephemeral balance field if needed for UI (though UI uses controller getter usually)
+      m.balance = _memberBalances[m.id] ?? 0.0;
     }
+    debugPrint("Balance recalculation complete.");
   }
 
   // Family Management

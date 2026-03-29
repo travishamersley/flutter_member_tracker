@@ -16,7 +16,7 @@ class FakeSheetsService extends SheetsService {
   Future<void> init() async {} // Do nothing
 
   @override
-  Future<void> fetchAllData() async {}
+  Future<void> syncData() async {}
 
   @override
   Future<void> addMember(Member m) async {
@@ -76,9 +76,13 @@ void main() {
           id: '1',
           firstName: 'John',
           lastName: 'Doe',
-          dob: DateTime.now(),
-          medicalInfo: '',
-          contactInfo: '',
+          address: '123 Fake St',
+          email: 'john@example.com',
+          dob: DateTime(1990, 1, 1),
+          mobile: '0400000000',
+          emergencyContact: 'Jane Doe',
+          medicalHistory: MedicalHistory(),
+          heardAbout: 'Internet',
         ),
       );
     });

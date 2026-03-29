@@ -25,9 +25,13 @@ class FinancialsScreen extends StatelessWidget {
               id: '?',
               firstName: 'Unknown',
               lastName: '',
+              address: '',
+              email: '',
               dob: DateTime.now(),
-              medicalInfo: '',
-              contactInfo: '',
+              mobile: '',
+              emergencyContact: '',
+              medicalHistory: MedicalHistory(),
+              heardAbout: '',
             ),
           );
 

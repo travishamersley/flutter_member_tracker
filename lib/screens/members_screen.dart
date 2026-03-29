@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:membership_tracker/controllers/club_controller.dart';
 
 import 'package:membership_tracker/screens/member_details_screen.dart';
+import 'package:membership_tracker/widgets/member_form.dart';
 
 class MembersScreen extends StatefulWidget {
   final ClubController controller;
@@ -120,102 +121,52 @@ class _MembersScreenState extends State<MembersScreen> {
   }
 
   void _showAddMemberDialog(BuildContext context) {
-    final formKey = GlobalKey<FormState>();
-    final firstNameController = TextEditingController();
-    final lastNameController = TextEditingController();
-    final dobController =
-        TextEditingController(); // Simple text for now, could catch DatePicker
-    final medicalController = TextEditingController();
-    final contactController = TextEditingController();
-
-    DateTime? selectedDate;
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Add New Member"),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: firstNameController,
-                  decoration: const InputDecoration(labelText: "First Name"),
-                  validator: (v) => v!.isEmpty ? "Required" : null,
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: lastNameController,
-                  decoration: const InputDecoration(labelText: "Last Name"),
-                  validator: (v) => v!.isEmpty ? "Required" : null,
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: dobController,
-                  decoration: const InputDecoration(
-                    labelText: "Date of Birth",
-                    suffixIcon: Icon(Icons.calendar_today),
-                  ),
-                  readOnly: true,
-                  onTap: () async {
-                    final date = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime(1900),
-                      lastDate: DateTime.now(),
-                    );
-                    if (date != null) {
-                      selectedDate = date;
-                      dobController.text = date
-                          .toIso8601String()
-                          .split('T')
-                          .first;
-                    }
-                  },
-                  validator: (v) => v!.isEmpty ? "Required" : null,
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: medicalController,
-                  decoration: const InputDecoration(
-                    labelText: "Medical Info (Optional)",
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: contactController,
-                  decoration: const InputDecoration(labelText: "Contact Info"),
-                  validator: (v) => v!.isEmpty ? "Required" : null,
-                ),
-              ],
-            ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text("Add New Member")),
+          body: MemberForm(
+            onSubmit:
+                (
+                  firstName,
+                  lastName,
+                  address,
+                  email,
+                  dob,
+                  mobile,
+                  homePhone,
+                  emergencyContact,
+                  medicalHistory,
+                  hasBeenSuspended,
+                  suspendedDetails,
+                  heardAbout,
+                  legalGuardian,
+                  consentSigned,
+                ) async {
+                  await widget.controller.addMember(
+                    firstName,
+                    lastName,
+                    address,
+                    email,
+                    dob,
+                    mobile,
+                    homePhone,
+                    emergencyContact,
+                    medicalHistory,
+                    hasBeenSuspended,
+                    suspendedDetails,
+                    heardAbout,
+                    legalGuardian,
+                    consentSigned,
+                  );
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                  setState(() {}); // Refresh list
+                },
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (formKey.currentState!.validate() && selectedDate != null) {
-                await widget.controller.addMember(
-                  firstNameController.text,
-                  lastNameController.text,
-                  selectedDate!,
-                  medicalController.text,
-                  contactController.text,
-                );
-                if (!context.mounted) return;
-                Navigator.pop(context);
-                setState(() {}); // Refresh list
-              }
-            },
-            child: const Text("Add"),
-          ),
-        ],
       ),
     );
   }

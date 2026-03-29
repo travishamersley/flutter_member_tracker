@@ -144,27 +144,78 @@ class _MemberDetailsScreenState extends State<MemberDetailsScreen> {
 
   Widget _buildProfileTab() {
     return SingleChildScrollView(
-      // Changed to ScrollView to avoid overflow
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _sectionHeader("Personal Details"),
             _infoRow(
               "Date of Birth",
               widget.member.dob.toIso8601String().split('T').first,
             ),
-            _infoRow("Contact", widget.member.contactInfo),
-            _infoRow("Medical", widget.member.medicalInfo),
+            _infoRow("Age", widget.member.age.toString()),
+            if (widget.member.age < 18)
+              _infoRow("Legal Guardian", widget.member.legalGuardian ?? "N/A"),
+            _infoRow("Address", widget.member.address),
+            _infoRow("Email", widget.member.email),
+            _infoRow("Heard About", widget.member.heardAbout),
+
+            _sectionHeader("Contact Info"),
+            _infoRow("Mobile", widget.member.mobile),
+            _infoRow(
+              "Home Phone",
+              widget.member.homePhone.isNotEmpty
+                  ? widget.member.homePhone
+                  : "N/A",
+            ),
+            _infoRow("Emergency Contact", widget.member.emergencyContact),
+
+            _sectionHeader("Medical History"),
+            // Display as chips or list
+            if (widget.member.medicalHistory.toString() == "None")
+              const Text("None", style: TextStyle(color: Colors.white70))
+            else
+              Wrap(
+                spacing: 8.0,
+                runSpacing: 4.0,
+                children: widget.member.medicalHistory
+                    .toString()
+                    .split(", ")
+                    .map((condition) {
+                      return Chip(label: Text(condition));
+                    })
+                    .toList(),
+              ),
+
+            if (widget.member.hasBeenSuspended) ...[
+              _sectionHeader("Suspension Details"),
+              Text(
+                widget.member.suspendedDetails ?? "No details provided.",
+                style: const TextStyle(color: Colors.redAccent),
+              ),
+            ],
+
+            _sectionHeader("Consent"),
+            _infoRow(
+              "Signed Consent Form",
+              widget.member.consentSigned ? "Yes" : "No",
+            ),
 
             const Divider(height: 32),
             _buildFamilySection(),
 
-            const SizedBox(
-              height: 32,
-            ), // Spacer replaced with sized box inside scroll view
+            const SizedBox(height: 32),
             OutlinedButton.icon(
               onPressed: () {
                 // Edit Logic
+                // We should probably reuse MemberForm for editing too
+                // For now, I'll just leave this as is or implement edit later if requested
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Edit functionality to be implemented"),
+                  ),
+                );
               },
               icon: const Icon(Icons.edit),
               label: const Text("Edit Details"),

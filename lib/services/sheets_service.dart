@@ -101,7 +101,7 @@ class SheetsService extends ChangeNotifier {
       // Auto-load on init
       await _findOrCreateSpreadsheet();
       await _findOrCreateSpreadsheet();
-      await fetchAllData();
+      await syncData();
     } else {
       debugPrint(
         'SheetsService: _initApi - Failed to create authenticated client (httpClient is null)',
@@ -228,9 +228,19 @@ class SheetsService extends ChangeNotifier {
         'ID',
         'FirstName',
         'LastName',
+        'Address',
+        'Email',
         'DOB',
-        'MedicalInfo',
-        'ContactInfo',
+        'Mobile',
+        'HomePhone',
+        'EmergencyContact',
+        'MedicalHistory',
+        'HasBeenSuspended',
+        'SuspendedDetails',
+        'HeardAbout',
+        'LegalGuardian',
+        'ConsentSigned',
+        'FamilyGroupId',
       ]);
       await _appendRow('Transactions', [
         'ID',
@@ -258,112 +268,140 @@ class SheetsService extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchAllData() async {
-    debugPrint('SheetsService: fetchAllData called');
+  Future<void> syncData() async {
+    debugPrint('SheetsService: syncData called');
 
-    // Lazy initialization
-    if (_sheetsApi == null && _currentUser != null) {
-      debugPrint(
-        'SheetsService: API not ready, attempting lazy initialization...',
-      );
-      await _initApi();
-    }
-
-    // Interactive fallback if lazy init failed
+    // 1. Ensure API is ready
     if (_sheetsApi == null) {
-      debugPrint(
-        'SheetsService: API still not ready after lazy init. Triggering interactive sign-in...',
-      );
-      try {
-        final account = await _googleSignIn.signIn();
-        debugPrint(
-          'SheetsService: Interactive sign-in returned account: ${account?.email}',
-        );
-
-        // Update local reference immediately to be safe
-        _currentUser = account;
-        // Try init again with fresh credentials
-        await _initApi();
-
-        // If still null, try requesting scopes explicitly (Web fix)
-        if (_sheetsApi == null) {
-          debugPrint(
-            'SheetsService: API still not ready. Attempting to request scopes explicitly...',
-          );
-          final granted = await _googleSignIn.requestScopes(Config.scopes);
-          debugPrint('SheetsService: Scopes granted: $granted');
-          if (granted) {
-            await _initApi();
-          }
-        }
-      } catch (e) {
-        debugPrint('SheetsService: Interactive sign-in failed: $e');
-      }
+      await _ensureApiReady();
     }
 
     if (_sheetsApi == null || _spreadsheetId == null) {
       debugPrint(
-        'SheetsService: fetchAllData aboring. _sheetsApi is ${_sheetsApi == null ? 'null' : 'ok'}, _spreadsheetId is $_spreadsheetId',
+        'SheetsService: syncData aborting. API or Spreadsheet not ready.',
       );
       return;
     }
 
     try {
+      // 2. Fetch Remote Data
       final ranges = [
-        'Members!A2:G',
-        'Transactions!A2:E',
+        'Members!A2:P',
+        'Transactions!A2:F',
         'Attendance!A2:E',
         'ClassSessions!A2:D',
       ];
-      debugPrint(
-        'SheetsService: Requesting ranges: $ranges from spreadsheet $_spreadsheetId',
-      );
 
       final response = await _sheetsApi!.spreadsheets.values.batchGet(
         _spreadsheetId!,
         ranges: ranges,
       );
 
-      if (response.valueRanges != null) {
-        debugPrint(
-          'SheetsService: Received ${response.valueRanges!.length} value ranges',
-        );
-        final memberRows = response.valueRanges![0].values;
-        members = memberRows != null
-            ? memberRows.map((row) => Member.fromRow(row)).toList()
-            : [];
+      if (response.valueRanges == null) return;
 
-        final transactionRows = response.valueRanges![1].values;
-        transactions = transactionRows != null
-            ? transactionRows.map((row) => Transaction.fromRow(row)).toList()
-            : [];
+      // Parse Remote Data
+      final remoteMembers = (response.valueRanges![0].values ?? [])
+          .map((row) => Member.fromRow(row))
+          .toList();
+      final remoteTransactions = (response.valueRanges![1].values ?? [])
+          .map((row) => Transaction.fromRow(row))
+          .toList();
+      final remoteAttendance = (response.valueRanges![2].values ?? [])
+          .map((row) => ClassAttendance.fromRow(row))
+          .toList();
+      final remoteSessions = (response.valueRanges!.length > 3)
+          ? (response.valueRanges![3].values ?? [])
+                .map((row) => ClassSession.fromRow(row))
+                .toList()
+          : <ClassSession>[];
 
-        final attendanceRows = response.valueRanges![2].values;
-        attendance = attendanceRows != null
-            ? attendanceRows.map((row) => ClassAttendance.fromRow(row)).toList()
-            : [];
+      // 3. Identify & Push Missing Local Items
+      // We compare current 'members' (local state) with 'remoteMembers'.
+      // If a local member ID is NOT in remote, it's new/offline. Push it.
 
-        if (response.valueRanges!.length > 3) {
-          final sessionRows = response.valueRanges![3].values;
-          classSessions = sessionRows != null
-              ? sessionRows.map((row) => ClassSession.fromRow(row)).toList()
-              : [];
-        }
-
-        await _localStorage.saveData(
-          members,
-          transactions,
-          attendance,
-          classSessions,
-        );
+      // Members
+      final localOnlyMembers = members
+          .where((l) => !remoteMembers.any((r) => r.id == l.id))
+          .toList();
+      for (var m in localOnlyMembers) {
+        debugPrint("Syncing Member up: ${m.firstName}");
+        await _appendRow('Members', m.toRow());
+        remoteMembers.add(
+          m,
+        ); // Add to our working list so we don't need to re-fetch
       }
-      notifyListeners();
-      debugPrint(
-        'SheetsService: fetchAllData completed successfully. Members: ${members.length}, Transactions: ${transactions.length}',
+
+      // Transactions
+      final localOnlyTransactions = transactions
+          .where((l) => !remoteTransactions.any((r) => r.id == l.id))
+          .toList();
+      for (var t in localOnlyTransactions) {
+        debugPrint("Syncing Transaction up: ${t.amount}");
+        await _appendRow('Transactions', t.toRow());
+        remoteTransactions.add(t);
+      }
+
+      // Attendance
+      final localOnlyAttendance = attendance
+          .where((l) => !remoteAttendance.any((r) => r.id == l.id))
+          .toList();
+      for (var a in localOnlyAttendance) {
+        debugPrint("Syncing Attendance up: ${a.date}");
+        await _appendRow('Attendance', a.toRow());
+        remoteAttendance.add(a);
+      }
+
+      // Sessions
+      final localOnlySessions = classSessions
+          .where((l) => !remoteSessions.any((r) => r.id == l.id))
+          .toList();
+      for (var s in localOnlySessions) {
+        debugPrint("Syncing Session up: ${s.name}");
+        await _appendRow('ClassSessions', s.toRow());
+        remoteSessions.add(s);
+      }
+
+      // 4. Update Local State (Server Wins for conflicts)
+      members = remoteMembers;
+      transactions = remoteTransactions;
+      attendance = remoteAttendance;
+      classSessions = remoteSessions;
+
+      // 5. Persist
+      await _localStorage.saveData(
+        members,
+        transactions,
+        attendance,
+        classSessions,
       );
+
+      notifyListeners();
+      debugPrint('SheetsService: syncData completed.');
     } catch (e, stack) {
-      debugPrint('SheetsService: Error fetching data: $e');
+      debugPrint('SheetsService: Error syncing data: $e');
       debugPrint(stack.toString());
+      lastError = "Sync Failed: $e";
+      notifyListeners();
+    }
+  }
+
+  // Refactored helper for API init
+  Future<void> _ensureApiReady() async {
+    if (_sheetsApi == null && _currentUser != null) {
+      await _initApi();
+    }
+    if (_sheetsApi == null) {
+      try {
+        final account = await _googleSignIn.signIn();
+        _currentUser = account;
+        await _initApi();
+        if (_sheetsApi == null) {
+          final granted = await _googleSignIn.requestScopes(Config.scopes);
+          if (granted) await _initApi();
+        }
+      } catch (e) {
+        debugPrint('SheetsService: Interactive sign-in failed: $e');
+      }
     }
   }
 
@@ -460,7 +498,7 @@ class SheetsService extends ChangeNotifier {
 
       if (_sheetsApi != null && _spreadsheetId != null) {
         final rowIndex = index + 2;
-        final range = 'Members!A$rowIndex:G$rowIndex';
+        final range = 'Members!A$rowIndex:P$rowIndex'; // Extended range
         final valueRange = sheets.ValueRange(values: [member.toRow()]);
         try {
           await _sheetsApi!.spreadsheets.values.update(

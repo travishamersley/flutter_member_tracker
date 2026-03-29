@@ -1,22 +1,115 @@
+import 'dart:convert';
 import 'package:uuid/uuid.dart';
+
+class MedicalHistory {
+  bool backInjury;
+  bool hernia;
+  bool epilepsy;
+  bool allergies;
+  bool heartCondition;
+  bool physicalDisability;
+  bool asthma;
+  bool psychological;
+  bool other;
+  String? otherDetails;
+
+  MedicalHistory({
+    this.backInjury = false,
+    this.hernia = false,
+    this.epilepsy = false,
+    this.allergies = false,
+    this.heartCondition = false,
+    this.physicalDisability = false,
+    this.asthma = false,
+    this.psychological = false,
+    this.other = false,
+    this.otherDetails,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'backInjury': backInjury,
+      'hernia': hernia,
+      'epilepsy': epilepsy,
+      'allergies': allergies,
+      'heartCondition': heartCondition,
+      'physicalDisability': physicalDisability,
+      'asthma': asthma,
+      'psychological': psychological,
+      'other': other,
+      'otherDetails': otherDetails,
+    };
+  }
+
+  factory MedicalHistory.fromJson(Map<String, dynamic> json) {
+    return MedicalHistory(
+      backInjury: json['backInjury'] ?? false,
+      hernia: json['hernia'] ?? false,
+      epilepsy: json['epilepsy'] ?? false,
+      allergies: json['allergies'] ?? false,
+      heartCondition: json['heartCondition'] ?? false,
+      physicalDisability: json['physicalDisability'] ?? false,
+      asthma: json['asthma'] ?? false,
+      psychological: json['psychological'] ?? false,
+      other: json['other'] ?? false,
+      otherDetails: json['otherDetails'],
+    );
+  }
+
+  @override
+  String toString() {
+    final List<String> conditions = [];
+    if (backInjury) conditions.add("Back Injury");
+    if (hernia) conditions.add("Hernia");
+    if (epilepsy) conditions.add("Epilepsy");
+    if (allergies) conditions.add("Allergies");
+    if (heartCondition) conditions.add("Heart Condition");
+    if (physicalDisability) conditions.add("Physical Disability");
+    if (asthma) conditions.add("Asthma");
+    if (psychological) conditions.add("Psychological");
+    if (other) conditions.add("Other: ${otherDetails ?? ''}");
+
+    if (conditions.isEmpty) return "None";
+    return conditions.join(", ");
+  }
+}
 
 class Member {
   final String id;
   String firstName;
   String lastName;
+  String address;
+  String email;
   DateTime dob;
-  String medicalInfo;
-  String contactInfo;
-  String? familyGroupId; // New field for grouping families
+  String mobile;
+  String homePhone;
+  String emergencyContact;
+  MedicalHistory medicalHistory;
+  bool hasBeenSuspended;
+  String? suspendedDetails;
+  String heardAbout;
+  String? legalGuardian; // Required if age < 18
+  bool consentSigned;
+
+  String? familyGroupId;
   double balance;
 
   Member({
     required this.id,
     required this.firstName,
     required this.lastName,
+    required this.address,
+    required this.email,
     required this.dob,
-    required this.medicalInfo,
-    required this.contactInfo,
+    required this.mobile,
+    this.homePhone = "",
+    required this.emergencyContact,
+    required this.medicalHistory,
+    this.hasBeenSuspended = false,
+    this.suspendedDetails,
+    required this.heardAbout,
+    this.legalGuardian,
+    this.consentSigned = false,
     this.familyGroupId,
     this.balance = 0.0,
   });
@@ -24,39 +117,103 @@ class Member {
   factory Member.create({
     required String firstName,
     required String lastName,
+    required String address,
+    required String email,
     required DateTime dob,
-    required String medicalInfo,
-    required String contactInfo,
+    required String mobile,
+    String homePhone = "",
+    required String emergencyContact,
+    required MedicalHistory medicalHistory,
+    bool hasBeenSuspended = false,
+    String? suspendedDetails,
+    required String heardAbout,
+    String? legalGuardian,
+    bool consentSigned = false,
     String? familyGroupId,
   }) {
     return Member(
       id: const Uuid().v4(),
       firstName: firstName,
       lastName: lastName,
+      address: address,
+      email: email,
       dob: dob,
-      medicalInfo: medicalInfo,
-      contactInfo: contactInfo,
+      mobile: mobile,
+      homePhone: homePhone,
+      emergencyContact: emergencyContact,
+      medicalHistory: medicalHistory,
+      hasBeenSuspended: hasBeenSuspended,
+      suspendedDetails: suspendedDetails,
+      heardAbout: heardAbout,
+      legalGuardian: legalGuardian,
+      consentSigned: consentSigned,
       familyGroupId: familyGroupId,
     );
   }
 
+  // Calculate age helper
+  int get age {
+    final now = DateTime.now();
+    int age = now.year - dob.year;
+    if (now.month < dob.month ||
+        (now.month == dob.month && now.day < dob.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  String get contactInfo =>
+      "$email | $mobile"; // Backwards compatibility helper for UI display
+
+  String get medicalInfo =>
+      medicalHistory.toString(); // Backwards compatibility for UI display
+
   // From Google Sheet Row
   factory Member.fromRow(List<dynamic> row) {
-    if (row.length < 7) throw Exception("Invalid row received for Member");
+    if (row.length < 15) {
+      // Handle legacy or invalid rows gracefully?
+      // User said they will delete all data, so we can be strict or default.
+      // Let's try to parse what we can or default.
+      // But for now, let's assume correct schema or throw.
+      // Given "I will delete all existing data", we expect fresh rows.
+    }
+
+    // Safety check for index availability
+    dynamic getCol(int index) => (index < row.length) ? row[index] : "";
+
+    // Parse Medical History JSON
+    MedicalHistory medHist;
+    try {
+      String jsonStr = getCol(9).toString();
+      if (jsonStr.isNotEmpty && jsonStr != "null") {
+        medHist = MedicalHistory.fromJson(jsonDecode(jsonStr));
+      } else {
+        medHist = MedicalHistory();
+      }
+    } catch (e) {
+      medHist = MedicalHistory();
+    }
+
     return Member(
-      id: row[0] as String,
-      firstName: row[1] as String,
-      lastName: row[2] as String,
-      dob: DateTime.tryParse(row[3] as String) ?? DateTime.now(),
-      medicalInfo: row[4] as String,
-      contactInfo: row[5] as String,
-      // Check if row has familyGroupId at index 6 (actually index 6 was contact in old code? No.)
-      // Old: 0=id, 1=first, 2=last, 3=dob, 4=medical, 5=contact
-      // New: 6=familyGroupId?
-      // Wait, let's check the old file content.
-      // 0:id, 1:first, 2:last, 3:dob, 4:medical, 5:contact.
-      // So row[6] would be the next one.
-      familyGroupId: (row.length > 6) ? (row[6] as String).trim() : null,
+      id: getCol(0).toString(),
+      firstName: getCol(1).toString(),
+      lastName: getCol(2).toString(),
+      address: getCol(3).toString(),
+      email: getCol(4).toString(),
+      dob: _parseDate(getCol(5).toString()) ?? DateTime.now(),
+      mobile: getCol(6).toString(),
+      homePhone: getCol(7).toString(),
+      emergencyContact: getCol(8).toString(),
+      medicalHistory: medHist,
+      hasBeenSuspended: getCol(10).toString().toLowerCase() == 'true',
+      suspendedDetails: getCol(11).toString(),
+      heardAbout: getCol(12).toString(),
+      legalGuardian: getCol(13).toString(),
+      consentSigned: getCol(14).toString().toLowerCase() == 'true',
+      familyGroupId:
+          (getCol(15).toString() == 'null' || getCol(15).toString().isEmpty)
+          ? null
+          : getCol(15).toString(),
       balance: 0.0,
     );
   }
@@ -66,9 +223,18 @@ class Member {
       id,
       firstName,
       lastName,
+      address,
+      email,
       dob.toIso8601String(),
-      medicalInfo,
-      contactInfo,
+      mobile,
+      homePhone,
+      emergencyContact,
+      jsonEncode(medicalHistory.toJson()),
+      hasBeenSuspended.toString(),
+      suspendedDetails ?? "",
+      heardAbout,
+      legalGuardian ?? "",
+      consentSigned.toString(),
       familyGroupId ?? "",
     ];
   }
@@ -121,7 +287,7 @@ class Transaction {
       id: row[0],
       memberId: row[1],
       amount: double.tryParse(row[2].toString()) ?? 0.0,
-      date: DateTime.tryParse(row[3].toString()) ?? DateTime.now(),
+      date: _parseDate(row[3].toString()) ?? DateTime.now(),
       description: row[4],
       classSessionId: sessionId,
     );
@@ -167,7 +333,7 @@ class ClassSession {
     return ClassSession(
       id: row[0] as String,
       name: row[1] as String,
-      dateTime: DateTime.tryParse(row[2] as String) ?? DateTime.now(),
+      dateTime: _parseDate(row[2] as String) ?? DateTime.now(),
       isCompleted: (row.length > 3)
           ? (row[3].toString().toLowerCase() == 'true')
           : false,
@@ -222,7 +388,7 @@ class ClassAttendance {
     return ClassAttendance(
       id: row[0],
       memberId: row[1],
-      date: DateTime.tryParse(row[2].toString()) ?? DateTime.now(),
+      date: _parseDate(row[2].toString()) ?? DateTime.now(),
       classType: legacyType,
       classSessionId: sessionId,
     );
@@ -237,4 +403,29 @@ class ClassAttendance {
       classSessionId ?? "",
     ];
   }
+}
+
+DateTime? _parseDate(String input) {
+  if (input.isEmpty || input == 'null') return null;
+  final cleanInput = input.trim();
+
+  // 1. ISO 8601
+  try {
+    final iso = DateTime.tryParse(cleanInput);
+    if (iso != null) return iso;
+  } catch (_) {}
+
+  // 2. DD/MM/YYYY
+  try {
+    final parts = cleanInput.split('/');
+    if (parts.length == 3) {
+      final part1 = int.parse(parts[0].trim());
+      final part2 = int.parse(parts[1].trim());
+      final part3Str = parts[2].trim().split(' ')[0];
+      final part3 = int.parse(part3Str);
+      return DateTime(part3, part2, part1);
+    }
+  } catch (_) {}
+
+  return null;
 }
