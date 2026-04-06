@@ -1,77 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:membership_tracker/controllers/club_controller.dart';
 import 'package:membership_tracker/models.dart';
-import 'package:membership_tracker/services/sheets_service.dart';
-
-import 'package:google_sign_in/google_sign_in.dart';
-
-// Mock Service
-class FakeSheetsService extends SheetsService {
-  FakeSheetsService() : super(googleSignIn: GoogleSignIn(clientId: 'fake'));
-
-  @override
-  bool get isSignedIn => true;
-
-  @override
-  Future<void> init() async {} // Do nothing
-
-  @override
-  Future<void> exportToSheets() async {}
-
-  @override
-  Future<void> addMember(Member m) async {
-    members.add(m);
-    notifyListeners();
-  }
-
-  @override
-  Future<void> updateMember(Member m) async {
-    final index = members.indexWhere((existing) => existing.id == m.id);
-    if (index != -1) {
-      members[index] = m;
-      notifyListeners();
-    }
-  }
-
-  @override
-  Future<void> addTransaction(Transaction t) async {
-    transactions.add(t);
-    notifyListeners();
-  }
-
-  @override
-  Future<void> addAttendance(ClassAttendance a) async {
-    attendance.add(a);
-    notifyListeners();
-  }
-
-  @override
-  Future<void> addClassSession(ClassSession s) async {
-    classSessions.add(s);
-    notifyListeners();
-  }
-
-  @override
-  Future<void> updateClassSession(ClassSession s) async {
-    final index = classSessions.indexWhere((existing) => existing.id == s.id);
-    if (index != -1) {
-      classSessions[index] = s;
-      notifyListeners();
-    }
-  }
-}
 
 void main() {
-  group('Pricing Verification (Refactored)', () {
+  group('Pricing Verification (Refactored to Local)', () {
     late ClubController controller;
-    late FakeSheetsService service;
 
     setUp(() {
-      service = FakeSheetsService();
-      controller = ClubController(service);
+      controller = ClubController();
+      controller.isLoading = false;
 
-      // Add a test member
-      service.members.add(
+      // Add a test member directly
+      controller.members.add(
         Member(
           id: '1',
           firstName: 'John',
@@ -87,56 +27,39 @@ void main() {
       );
     });
 
-    test('Single Class Cost', () {
+    test('Single Class Cost', () async {
       final now = DateTime.now();
 
-      service.attendance.add(
-        ClassAttendance(
-          id: 'a1',
-          memberId: '1',
-          date: now,
-          classSessionId: 'session_1',
-        ),
-      );
+      // Ensure class session exists for correct check-in path
+      final session = ClassSession(id: 'session_1', name: 'Test', dateTime: now);
+      controller.classSessions.add(session);
 
-      // Trigger update
-      service.notifyListeners();
+      await controller.checkIn('1', 'session_1');
 
       final balance = controller.getMemberBalance('1');
       expect(balance, -10.0);
     });
 
-    test('Two Classes Same Day (No Bundling)', () {
-      // Logic changed: No longer 2-for-1. Should be 2 charges.
+    test('Two Classes Same Day (No Bundling)', () async {
       final now = DateTime.now();
+   
+      final session1 = ClassSession(id: 'session_1', name: 'Test1', dateTime: now);
+      final session2 = ClassSession(id: 'session_2', name: 'Test2', dateTime: now.add(const Duration(hours: 1)));
+      
+      controller.classSessions.addAll([session1, session2]);
 
-      service.attendance.add(
-        ClassAttendance(
-          id: 'a1',
-          memberId: '1',
-          date: now,
-          classSessionId: 'session_1',
-        ),
-      );
-      service.attendance.add(
-        ClassAttendance(
-          id: 'a2',
-          memberId: '1',
-          date: now,
-          classSessionId: 'session_2',
-        ),
-      );
-
-      service.notifyListeners(); // Update controller
+      // Check in to both
+      await controller.checkIn('1', 'session_1');
+      await controller.checkIn('1', 'session_2');
 
       final balance = controller.getMemberBalance('1');
       expect(balance, -20.0); // 2 * -10
     });
 
-    test('Legacy Attendance (No Session ID) still charges', () {
+    test('Legacy Attendance (No Session ID) still charges', () async {
+      // Direct insertion to mimic legacy data loaded from disk
       final now = DateTime.now();
-
-      service.attendance.add(
+      controller.attendance.add(
         ClassAttendance(
           id: 'a1',
           memberId: '1',
@@ -144,8 +67,12 @@ void main() {
           classType: 'LegacyClass', // No session ID
         ),
       );
-
-      service.notifyListeners();
+      
+      // We must manually trigger recalculation since we bypassed the controller action
+      // However, checkIn / recordPayment normally handles this. Since _recalculateBalances is private,
+      // we can trigger a recalculation by checking in a fake user or calling an update.
+      // Better yet for tests, adding a transaction of 0.0 forces _saveLocal and _recalculateBalances!
+      await controller.recordPayment('1', 0.0, 'Balance trigger');
 
       final balance = controller.getMemberBalance('1');
       expect(balance, -10.0);

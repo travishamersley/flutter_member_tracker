@@ -4,7 +4,6 @@ import 'package:membership_tracker/screens/attendance_screen.dart';
 import 'package:membership_tracker/screens/financials_screen.dart';
 import 'package:membership_tracker/screens/members_screen.dart';
 import 'package:membership_tracker/screens/grade_levels_screen.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class DashboardScreen extends StatelessWidget {
   final ClubController controller;
@@ -29,29 +28,7 @@ class DashboardScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Dojo Dashboard"),
-        actions: [
-          if (controller.needsBackup)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Tooltip(
-                message: "Unsaved local changes matching cloud",
-                child: Icon(Icons.cloud_off, color: Colors.orange),
-              ),
-            )
-          else if (controller.isSignedIn)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Tooltip(
-                message: "Backed up to cloud",
-                child: Icon(Icons.cloud_done, color: Colors.green),
-              ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: controller.signOut,
-            tooltip: "Sign Out",
-          ),
-        ],
+        // Removed logout and Google cloud icons since this is local-only
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -144,44 +121,44 @@ class DashboardScreen extends StatelessWidget {
                 ),
               ],
             ),
-            if (controller.isSignedIn) ...[
-              const SizedBox(height: 32),
-              const Divider(),
-              if (controller.isSyncing)
-                const Center(child: CircularProgressIndicator())
-              else
-                Center(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.table_chart),
-                    label: const Text("Export to Google Sheets"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.shade50,
-                      foregroundColor: Colors.green.shade800,
-                    ),
-                    onPressed: () {
-                      controller.exportToSheets();
-                    },
-                  ),
-                ),
-            ],
-            if (controller.spreadsheetUrl != null) ...[
-              const SizedBox(height: 16),
-              Center(
-                child: TextButton.icon(
-                  onPressed: () async {
-                    final uri = Uri.parse(controller.spreadsheetUrl!);
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(
-                        uri,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.table_chart),
-                  label: const Text("Open Google Sheet"),
-                ),
-              ),
-            ],
+            const SizedBox(height: 32),
+            const Divider(),
+            if (controller.isSyncing)
+               const Center(child: CircularProgressIndicator())
+            else
+               Column(
+                 children: [
+                   Center(
+                     child: ElevatedButton.icon(
+                       icon: const Icon(Icons.table_view),
+                       label: const Text("Export to Excel Workbook"),
+                       style: ElevatedButton.styleFrom(
+                         backgroundColor: Colors.green.shade50,
+                         foregroundColor: Colors.green.shade800,
+                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)
+                       ),
+                       onPressed: () {
+                         controller.exportToExcel();
+                       },
+                     ),
+                   ),
+                   const SizedBox(height: 16),
+                   Center(
+                     child: OutlinedButton.icon(
+                       icon: const Icon(Icons.file_upload),
+                       label: const Text("Import from Excel"),
+                       style: OutlinedButton.styleFrom(
+                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                         textStyle: const TextStyle(fontSize: 16)
+                       ),
+                       onPressed: () {
+                         controller.importExcel();
+                       },
+                     ),
+                   )
+                 ],
+               ),
           ],
         ),
       ),

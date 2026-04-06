@@ -1,45 +1,32 @@
 import 'package:flutter/foundation.dart';
 import 'package:membership_tracker/models.dart';
-import 'package:membership_tracker/services/sheets_service.dart';
+import 'package:membership_tracker/services/local_storage_service.dart';
+import 'package:membership_tracker/services/data_exchange_service.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io';
 
 class ClubController extends ChangeNotifier {
-  final SheetsService _sheetsService;
+  final LocalStorageService _localStorage = LocalStorageService();
+  final DataExchangeService _dataExchangeService = DataExchangeService();
 
   static const double classPrice = 10.0;
 
-  ClubController(this._sheetsService) {
-    _sheetsService.addListener(_onServiceUpdate);
-  }
+  bool isLoading = true;
+  String? lastError;
 
-  void _onServiceUpdate() {
-    // Re-calculate balances whenever data changes
-    _recalculateBalances();
-    notifyListeners();
-  }
+  // Data
+  List<Member> members = [];
+  List<Transaction> transactions = [];
+  List<ClassAttendance> attendance = [];
+  List<ClassSession> classSessions = [];
+  List<GradeLevel> gradeLevels = [];
+  List<StudentGrade> studentGrades = [];
 
-  // Expose data
-  bool get isLoading => !_sheetsService.isSignedIn; // Simplified state
-  bool get isSignedIn => _sheetsService.isSignedIn;
-  List<Member> get members => _sheetsService.members;
-  List<Transaction> get transactions => _sheetsService.transactions;
-  List<ClassAttendance> get attendance => _sheetsService.attendance;
   List<ClassSession> get sessions =>
-      List.of(_sheetsService.classSessions)
-        ..sort((a, b) => b.dateTime.compareTo(a.dateTime));
-  List<GradeLevel> get gradeLevels => _sheetsService.gradeLevels;
-  List<StudentGrade> get studentGrades => _sheetsService.studentGrades;
+      List.of(classSessions)..sort((a, b) => b.dateTime.compareTo(a.dateTime));
 
-  String? get spreadsheetUrl => _sheetsService.spreadsheetUrl;
-  String? get lastError => _sheetsService.lastError;
-  bool get needsBackup => _sheetsService.needsBackup;
-
-  // Lifecycle Getters
   ClassSession? get activeSession {
     try {
-      // Find the most recent session that is NOT completed
-      // Since 'sessions' is sorted DESC, we check first ones.
-      // But we should strictly allow only one?
-      // For now, if there are multiple open, returning the latest is safest.
       return sessions.firstWhere((s) => !s.isCompleted);
     } catch (_) {
       return null;
@@ -50,23 +37,105 @@ class ClubController extends ChangeNotifier {
       sessions.where((s) => s.isCompleted).toList();
 
   Future<void> init() async {
-    await _sheetsService.init();
+    isLoading = true;
+    notifyListeners();
+    try {
+      final data = await _localStorage.loadAllData();
+      members = data['members'] as List<Member>? ?? [];
+      transactions = data['transactions'] as List<Transaction>? ?? [];
+      attendance = data['attendance'] as List<ClassAttendance>? ?? [];
+      classSessions = data['classSessions'] as List<ClassSession>? ?? [];
+      gradeLevels = data['gradeLevels'] as List<GradeLevel>? ?? [];
+      studentGrades = data['studentGrades'] as List<StudentGrade>? ?? [];
+      
+      _recalculateBalances();
+    } catch (e) {
+      lastError = e.toString();
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
   }
 
-  Future<void> signIn() => _sheetsService.signIn();
-  Future<void> signOut() => _sheetsService.signOut();
+  Future<void> _saveLocal() async {
+    await _localStorage.saveData(
+      members,
+      transactions,
+      attendance,
+      classSessions,
+      gradeLevels,
+      studentGrades,
+    );
+    _recalculateBalances();
+    notifyListeners();
+  }
 
   // --- One-Way Export ---
   bool isSyncing = false;
-  Future<void> exportToSheets() async {
+  Future<void> exportToExcel() async {
     if (isSyncing) return;
     isSyncing = true;
     notifyListeners();
 
     try {
-      debugPrint('ClubController: Calling _sheetsService.exportToSheets()');
-      await _sheetsService.exportToSheets();
-      debugPrint('ClubController: exportToSheets completed');
+      await _dataExchangeService.exportDatabaseToExcel(
+        members: members,
+        transactions: transactions,
+        attendance: attendance,
+        classSessions: classSessions,
+        gradeLevels: gradeLevels,
+        studentGrades: studentGrades,
+      );
+    } catch (e) {
+      lastError = "Export Failed: $e";
+    } finally {
+      isSyncing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> importExcel() async {
+    if (isSyncing) return;
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        isSyncing = true;
+        notifyListeners();
+
+        final File file = File(result.files.single.path!);
+        final bytes = await file.readAsBytes();
+        
+        final parsedData = await _dataExchangeService.importFromExcel(bytes);
+
+        // Merge logic: Upsert by ID
+        void mergeList<T>(List<dynamic> parsed, List<T> current, String Function(T) getId, String Function(dynamic) getParsedId) {
+            for (var incoming in parsed) {
+                final incId = getParsedId(incoming);
+                final index = current.indexWhere((e) => getId(e) == incId);
+                if (index != -1) {
+                  current[index] = incoming as T;
+                } else {
+                  current.add(incoming as T);
+                }
+            }
+        }
+
+        mergeList<Member>(parsedData['members'] ?? [], members, (m) => m.id, (m) => m.id);
+        mergeList<Transaction>(parsedData['transactions'] ?? [], transactions, (t) => t.id, (t) => t.id);
+        mergeList<ClassAttendance>(parsedData['attendance'] ?? [], attendance, (a) => a.id, (a) => a.id);
+        mergeList<ClassSession>(parsedData['classSessions'] ?? [], classSessions, (s) => s.id, (s) => s.id);
+        mergeList<GradeLevel>(parsedData['gradeLevels'] ?? [], gradeLevels, (g) => g.id, (g) => g.id);
+        mergeList<StudentGrade>(parsedData['studentGrades'] ?? [], studentGrades, (g) => g.id, (g) => g.id);
+
+        await _saveLocal();
+        lastError = null; // Clear any old errors if successful
+      }
+    } catch (e) {
+      lastError = "Import Failed: $e";
     } finally {
       isSyncing = false;
       notifyListeners();
@@ -112,7 +181,8 @@ class ClubController extends ChangeNotifier {
       legalGuardian: legalGuardian,
       consentSigned: consentSigned,
     );
-    await _sheetsService.addMember(member);
+    members.add(member);
+    await _saveLocal();
   }
 
   Future<void> recordPayment(
@@ -127,7 +197,8 @@ class ClubController extends ChangeNotifier {
       description: description,
       classSessionId: classSessionId,
     );
-    await _sheetsService.addTransaction(transaction);
+    transactions.add(transaction);
+    await _saveLocal();
   }
 
   Future<void> checkIn(String memberId, String classSessionId) async {
@@ -135,7 +206,8 @@ class ClubController extends ChangeNotifier {
       memberId: memberId,
       classSessionId: classSessionId,
     );
-    await _sheetsService.addAttendance(checkIn);
+    attendance.add(checkIn);
+    await _saveLocal();
   }
 
   Future<void> checkInAndPay(
@@ -149,7 +221,8 @@ class ClubController extends ChangeNotifier {
 
   Future<void> addGradeLevel(String name) async {
     final grade = GradeLevel.create(name: name);
-    await _sheetsService.addGradeLevel(grade);
+    gradeLevels.add(grade);
+    await _saveLocal();
   }
 
   Future<void> recordGrading({
@@ -171,7 +244,7 @@ class ClubController extends ChangeNotifier {
       notes: notes,
       areasOfImprovement: areasOfImprovement,
     );
-    await _sheetsService.addStudentGrade(studentGrade);
+    studentGrades.add(studentGrade);
 
     if (feeAmount > 0) {
       final transaction = Transaction.create(
@@ -180,7 +253,7 @@ class ClubController extends ChangeNotifier {
         description: "Grading Fee - ${grade.name}",
         classSessionId: classSessionId,
       );
-      await _sheetsService.addTransaction(transaction);
+      transactions.add(transaction);
     }
 
     if (classSessionId != null) {
@@ -189,18 +262,14 @@ class ClubController extends ChangeNotifier {
         classSessionId: classSessionId,
         isGrading: true, // Waive class fee
       );
-      await _sheetsService.addAttendance(checkIn);
+      attendance.add(checkIn);
     }
+    
+    await _saveLocal();
   }
 
   Future<void> createClassForNow() async {
-    // If there is already an active session, maybe we should auto-close it?
-    // Or just let user create another one (no restriction requested).
-    // But good UX suggests checking.
-    // Proceeding to create.
-
     final now = DateTime.now();
-    // Helper to format: "Wednesday 5:00 PM"
     final days = {
       1: 'Mon',
       2: 'Tue',
@@ -211,77 +280,58 @@ class ClubController extends ChangeNotifier {
       7: 'Sun',
     };
     final dayName = days[now.weekday];
-    final hour = now.hour > 12
-        ? now.hour - 12
-        : (now.hour == 0 ? 12 : now.hour);
+    final hour = now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
     final amPm = now.hour >= 12 ? 'PM' : 'AM';
     final minuteToken = now.minute.toString().padLeft(2, '0');
     final name = "$dayName ${now.month}/${now.day} - $hour:$minuteToken $amPm";
 
     final session = ClassSession.create(name: name);
-    await _sheetsService.addClassSession(session);
+    classSessions.add(session);
+    await _saveLocal();
   }
 
   Future<void> endClass(ClassSession session) async {
-    final updated = ClassSession(
-      id: session.id,
-      name: session.name,
-      dateTime: session.dateTime,
-      isCompleted: true,
-    );
-    await _sheetsService.updateClassSession(updated);
+    final index = classSessions.indexWhere((s) => s.id == session.id);
+    if (index != -1) {
+      classSessions[index] = ClassSession(
+        id: session.id,
+        name: session.name,
+        dateTime: session.dateTime,
+        isCompleted: true,
+      );
+      await _saveLocal();
+    }
   }
 
   void _recalculateBalances() {
-    debugPrint("Recalculating Balances...");
     _memberBalances = {};
 
-    // 1. Calculate Raw Individual Balances
     Map<String, double> rawBalances = {};
 
-    // Initialize with 0
     for (var m in members) {
       rawBalances[m.id] = 0.0;
     }
 
-    // Add Payments
-    debugPrint("Processing ${transactions.length} transactions for balances.");
     for (var t in transactions) {
       if (rawBalances.containsKey(t.memberId)) {
         rawBalances[t.memberId] = (rawBalances[t.memberId] ?? 0) + t.amount;
-      } else {
-        // Transaction for unknown member?
-        debugPrint("Warning: Transaction for unknown memberId: ${t.memberId}");
       }
     }
 
-    // Subtract Class Costs
-    // New Logic: 1 Attendance = 1 Charge (classPrice)
-    debugPrint(
-      "Processing ${attendance.length} attendance records for charges.",
-    );
     for (var a in attendance) {
       if (rawBalances.containsKey(a.memberId)) {
         if (a.isGrading) {
-          // Waive the normal class fee when grading
           continue;
         }
 
         if (a.classSessionId != null && a.classSessionId!.isNotEmpty) {
-          // Valid new session attendance
           rawBalances[a.memberId] = (rawBalances[a.memberId] ?? 0) - classPrice;
         } else {
-          // Legacy attendance counts too
           rawBalances[a.memberId] = (rawBalances[a.memberId] ?? 0) - classPrice;
         }
       }
     }
 
-    // Debug output a few balances
-    // rawBalances.forEach((k, v) => debugPrint("Member $k Raw Balance: $v"));
-
-    // 2. Aggregate by Family Group
-    // Map<FamilyGroupId, TotalBalance>
     Map<String, double> familyTotals = {};
 
     for (var m in members) {
@@ -291,66 +341,50 @@ class ClubController extends ChangeNotifier {
       }
     }
 
-    // 3. Assign Balances
     for (var m in members) {
       if (m.familyGroupId != null && m.familyGroupId!.isNotEmpty) {
-        // Member is in a family -> balance is the family total
         _memberBalances[m.id] = familyTotals[m.familyGroupId!] ?? 0.0;
       } else {
-        // Individual
         _memberBalances[m.id] = rawBalances[m.id] ?? 0.0;
       }
-      // Update the member object's ephemeral balance field if needed for UI (though UI uses controller getter usually)
       m.balance = _memberBalances[m.id] ?? 0.0;
     }
-    debugPrint("Balance recalculation complete.");
   }
 
   // Family Management
 
   Future<void> createFamilyGroup(Member initiator, List<Member> others) async {
-    // We need a unique ID for the family.
-    // Since we don't import uuid here, let's reuse the initiator's ID + timestamp or something,
-    // OR we can just modify models.dart to export Uuid, or import it here.
-    // Ideally we should import uuid. I'll stick to a simple unique string generation for now or assume Uuid is available if I add import.
-    // Actually, let's just use a simple random string generator since we don't want to break imports if not needed,
-    // BUT we are already using models.dart which uses uuid.
-    // Let's just use DateTime.now().millisecondsSinceEpoch.toString() + initiator.id; somewhat unique.
-    // Better: import uuid. But I can't easily add import top of file with replace_file_content unless I do whole file.
-    // I'll assume I can add the import later or use a workaround.
-    // Workaround: `const Uuid().v4()` is standard but needs import.
-    // I'll stick to string concatenation for uniqueness for now to avoid import hassle in this specific tool call?
-    // No, I should do it right. I will add the import in a separate call if needed, or just use a simple unique string.
     final String newFamilyId =
         "fam_${DateTime.now().millisecondsSinceEpoch}_${initiator.id.substring(0, 4)}";
 
-    // Update initiator
-    initiator.familyGroupId = newFamilyId;
-    await _sheetsService.updateMember(
-      initiator,
-    ); // We need updateMember in SheetsService!
+    final iIndex = members.indexWhere((m) => m.id == initiator.id);
+    if(iIndex != -1) members[iIndex].familyGroupId = newFamilyId;
 
-    // Update others
-    for (var m in others) {
-      m.familyGroupId = newFamilyId;
-      await _sheetsService.updateMember(m);
+    for (var o in others) {
+       final oIndex = members.indexWhere((m) => m.id == o.id);
+       if(oIndex != -1) members[oIndex].familyGroupId = newFamilyId;
     }
 
-    _recalculateBalances();
-    notifyListeners();
+    await _saveLocal();
   }
 
   Future<void> addToFamilyGroup(Member member, String familyGroupId) async {
-    member.familyGroupId = familyGroupId;
-    await _sheetsService.updateMember(member);
-    _recalculateBalances();
-    notifyListeners();
+    final iIndex = members.indexWhere((m) => m.id == member.id);
+    if(iIndex != -1) members[iIndex].familyGroupId = familyGroupId;
+    await _saveLocal();
   }
 
   Future<void> removeFromFamilyGroup(Member member) async {
-    member.familyGroupId = null;
-    await _sheetsService.updateMember(member); // Will write empty string
-    _recalculateBalances();
-    notifyListeners();
+    final iIndex = members.indexWhere((m) => m.id == member.id);
+    if(iIndex != -1) members[iIndex].familyGroupId = null;
+    await _saveLocal();
+  }
+
+  Future<void> updateMember(Member member) async {
+    final index = members.indexWhere((m) => m.id == member.id);
+    if (index != -1) {
+      members[index] = member;
+      await _saveLocal();
+    }
   }
 }
