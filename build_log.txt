@@ -1,0 +1,24 @@
+Running Gradle task 'assembleRelease'...                        
+[0.001s][warning][os,container] Cgroup memory controller path at '/sys/fs/cgroup' seems to have moved to '/../../../app.slice/app-org.chromium.Chromium-605019.scope', detected limits won't be accurate
+[0.001s][warning][os,container] Cgroup cpu controller path at '/sys/fs/cgroup' seems to have moved to '/../../../app.slice/app-org.chromium.Chromium-605019.scope', detected limits won't be accurate
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':google_sign_in_android:compileReleaseJavaWithJavac'.
+> Could not resolve all files for configuration ':google_sign_in_android:androidJdkImage'.
+   > Failed to transform core-for-system-modules.jar to match attributes {artifactType=_internal_android_jdk_image, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}.
+      > Execution failed for JdkImageTransform: /home/travis/Android/Sdk/platforms/android-36/core-for-system-modules.jar.
+         > Error while executing process /home/travis/development/android-studio/jbr/bin/jmod with arguments {create --module-version [0.001s][warning][os,container] Cgroup memory controller path at '/sys/fs/cgroup' seems to have moved to '/../../../app.slice/app-org.chromium.Chromium-402254.scope', detected limits won't be accurate
+           [0.001s][warning][os,container] Cgroup cpu controller path at '/sys/fs/cgroup' seems to have moved to '/../../../app.slice/app-org.chromium.Chromium-402254.scope', detected limits won't be accurate
+           21.0.10 --target-platform LINUX-OTHER --class-path /home/travis/.gradle/caches/8.14/transforms/da2700d87a067a248c0d587cf250daae-2735642a-54fa-4510-b501-e4a452f4e6d2/transformed/output/temp/module.jar /home/travis/.gradle/caches/8.14/transforms/da2700d87a067a248c0d587cf250daae-2735642a-54fa-4510-b501-e4a452f4e6d2/transformed/output/temp/jmod/java.base.jmod}
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 2s
+Running Gradle task 'assembleRelease'...                         2,916ms
+Gradle task assembleRelease failed with exit code 1

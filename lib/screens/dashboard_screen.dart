@@ -30,6 +30,22 @@ class DashboardScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text("Dojo Dashboard"),
         actions: [
+          if (controller.needsBackup)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Tooltip(
+                message: "Unsaved local changes matching cloud",
+                child: Icon(Icons.cloud_off, color: Colors.orange),
+              ),
+            )
+          else if (controller.isSignedIn)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Tooltip(
+                message: "Backed up to cloud",
+                child: Icon(Icons.cloud_done, color: Colors.green),
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: controller.signOut,
@@ -136,15 +152,14 @@ class DashboardScreen extends StatelessWidget {
               else
                 Center(
                   child: ElevatedButton.icon(
-                    icon: const Icon(Icons.cloud_upload),
-                    label: const Text("Sync to Google"),
+                    icon: const Icon(Icons.table_chart),
+                    label: const Text("Export to Google Sheets"),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade50,
-                      foregroundColor: Colors.blue.shade800,
+                      backgroundColor: Colors.green.shade50,
+                      foregroundColor: Colors.green.shade800,
                     ),
                     onPressed: () {
-                      debugPrint('Dashboard: Sync button pressed');
-                      controller.sync();
+                      controller.exportToSheets();
                     },
                   ),
                 ),

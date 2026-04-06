@@ -15,7 +15,7 @@ class FakeSheetsService extends SheetsService {
   Future<void> init() async {}
 
   @override
-  Future<void> syncData() async {}
+  Future<void> exportToSheets() async {}
 
   @override
   Future<void> addMember(Member m) async {

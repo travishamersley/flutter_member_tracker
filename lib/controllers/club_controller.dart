@@ -31,6 +31,7 @@ class ClubController extends ChangeNotifier {
 
   String? get spreadsheetUrl => _sheetsService.spreadsheetUrl;
   String? get lastError => _sheetsService.lastError;
+  bool get needsBackup => _sheetsService.needsBackup;
 
   // Lifecycle Getters
   ClassSession? get activeSession {
@@ -55,18 +56,17 @@ class ClubController extends ChangeNotifier {
   Future<void> signIn() => _sheetsService.signIn();
   Future<void> signOut() => _sheetsService.signOut();
 
-  // --- Manual Sync ---
+  // --- One-Way Export ---
   bool isSyncing = false;
-  Future<void> sync() async {
+  Future<void> exportToSheets() async {
     if (isSyncing) return;
     isSyncing = true;
     notifyListeners();
 
     try {
-      // Revert to simple data fetch
-      debugPrint('ClubController: Calling _sheetsService.syncData()');
-      await _sheetsService.syncData();
-      debugPrint('ClubController: _sheetsService.syncData() completed');
+      debugPrint('ClubController: Calling _sheetsService.exportToSheets()');
+      await _sheetsService.exportToSheets();
+      debugPrint('ClubController: exportToSheets completed');
     } finally {
       isSyncing = false;
       notifyListeners();

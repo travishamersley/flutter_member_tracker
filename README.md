@@ -27,3 +27,5 @@ Where possible use core Flutter packages and avoid adding unnecessary dependenci
 - Hive
 - GoRouter
 - 
+-- I might need this - oauth key.
+859064477394-bn4hc9450lhfvfolnnrkeicitk91o7li.apps.googleusercontent.com
