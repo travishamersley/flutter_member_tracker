@@ -37,6 +37,8 @@ class SheetsService extends ChangeNotifier {
   List<Transaction> transactions = [];
   List<ClassAttendance> attendance = [];
   List<ClassSession> classSessions = [];
+  List<GradeLevel> gradeLevels = [];
+  List<StudentGrade> studentGrades = [];
 
   final LocalStorageService _localStorage = LocalStorageService();
 
@@ -70,7 +72,20 @@ class SheetsService extends ChangeNotifier {
     transactions = data['transactions'] as List<Transaction>;
     attendance = data['attendance'] as List<ClassAttendance>;
     classSessions = data['classSessions'] as List<ClassSession>;
+    gradeLevels = data['gradeLevels'] as List<GradeLevel>;
+    studentGrades = data['studentGrades'] as List<StudentGrade>;
     notifyListeners();
+  }
+
+  Future<void> _saveLocal() async {
+    await _localStorage.saveData(
+      members,
+      transactions,
+      attendance,
+      classSessions,
+      gradeLevels,
+      studentGrades,
+    );
   }
 
   Future<void> signIn() async {
@@ -216,6 +231,16 @@ class SheetsService extends ChangeNotifier {
           properties: sheets.SheetProperties(title: 'ClassSessions'),
         ),
       ),
+      sheets.Request(
+        addSheet: sheets.AddSheetRequest(
+          properties: sheets.SheetProperties(title: 'GradeLevels'),
+        ),
+      ),
+      sheets.Request(
+        addSheet: sheets.AddSheetRequest(
+          properties: sheets.SheetProperties(title: 'StudentGrades'),
+        ),
+      ),
     ];
 
     final batchRequest = sheets.BatchUpdateSpreadsheetRequest(
@@ -256,12 +281,25 @@ class SheetsService extends ChangeNotifier {
         'Date',
         'ClassType',
         'ClassSessionID',
+        'IsGrading',
       ]);
       await _appendRow('ClassSessions', [
         'ID',
         'Name',
         'DateTime',
         'IsCompleted',
+      ]);
+      await _appendRow('GradeLevels', [
+        'ID',
+        'Name',
+      ]);
+      await _appendRow('StudentGrades', [
+        'ID',
+        'MemberID',
+        'GradeID',
+        'Date',
+        'Notes',
+        'AreasOfImprovement',
       ]);
     } catch (e) {
       if (kDebugMode) print('Error initializing sheets: $e');
@@ -288,8 +326,10 @@ class SheetsService extends ChangeNotifier {
       final ranges = [
         'Members!A2:P',
         'Transactions!A2:F',
-        'Attendance!A2:E',
+        'Attendance!A2:F',
         'ClassSessions!A2:D',
+        'GradeLevels!A2:B',
+        'StudentGrades!A2:F',
       ];
 
       final response = await _sheetsApi!.spreadsheets.values.batchGet(
@@ -314,6 +354,16 @@ class SheetsService extends ChangeNotifier {
                 .map((row) => ClassSession.fromRow(row))
                 .toList()
           : <ClassSession>[];
+      final remoteGradeLevels = (response.valueRanges!.length > 4)
+          ? (response.valueRanges![4].values ?? [])
+                .map((row) => GradeLevel.fromRow(row))
+                .toList()
+          : <GradeLevel>[];
+      final remoteStudentGrades = (response.valueRanges!.length > 5)
+          ? (response.valueRanges![5].values ?? [])
+                .map((row) => StudentGrade.fromRow(row))
+                .toList()
+          : <StudentGrade>[];
 
       // 3. Identify & Push Missing Local Items
       // We compare current 'members' (local state) with 'remoteMembers'.
@@ -361,19 +411,36 @@ class SheetsService extends ChangeNotifier {
         remoteSessions.add(s);
       }
 
+      // GradeLevels
+      final localOnlyGradeLevels = gradeLevels
+          .where((l) => !remoteGradeLevels.any((r) => r.id == l.id))
+          .toList();
+      for (var g in localOnlyGradeLevels) {
+        debugPrint("Syncing GradeLevel up: ${g.name}");
+        await _appendRow('GradeLevels', g.toRow());
+        remoteGradeLevels.add(g);
+      }
+
+      // StudentGrades
+      final localOnlyStudentGrades = studentGrades
+          .where((l) => !remoteStudentGrades.any((r) => r.id == l.id))
+          .toList();
+      for (var s in localOnlyStudentGrades) {
+        debugPrint("Syncing StudentGrade up: ${s.id}");
+        await _appendRow('StudentGrades', s.toRow());
+        remoteStudentGrades.add(s);
+      }
+
       // 4. Update Local State (Server Wins for conflicts)
       members = remoteMembers;
       transactions = remoteTransactions;
       attendance = remoteAttendance;
       classSessions = remoteSessions;
+      gradeLevels = remoteGradeLevels;
+      studentGrades = remoteStudentGrades;
 
       // 5. Persist
-      await _localStorage.saveData(
-        members,
-        transactions,
-        attendance,
-        classSessions,
-      );
+      await _saveLocal();
 
       notifyListeners();
       debugPrint('SheetsService: syncData completed.');
@@ -409,49 +476,43 @@ class SheetsService extends ChangeNotifier {
   Future<void> addMember(Member member) async {
     members.add(member);
     notifyListeners();
-    await _localStorage.saveData(
-      members,
-      transactions,
-      attendance,
-      classSessions,
-    );
+    await _saveLocal();
     await _appendRow('Members', member.toRow());
   }
 
   Future<void> addTransaction(Transaction transaction) async {
     transactions.add(transaction);
     notifyListeners();
-    await _localStorage.saveData(
-      members,
-      transactions,
-      attendance,
-      classSessions,
-    );
+    await _saveLocal();
     await _appendRow('Transactions', transaction.toRow());
   }
 
   Future<void> addAttendance(ClassAttendance item) async {
     attendance.add(item);
     notifyListeners();
-    await _localStorage.saveData(
-      members,
-      transactions,
-      attendance,
-      classSessions,
-    );
+    await _saveLocal();
     await _appendRow('Attendance', item.toRow());
   }
 
   Future<void> addClassSession(ClassSession session) async {
     classSessions.add(session);
     notifyListeners();
-    await _localStorage.saveData(
-      members,
-      transactions,
-      attendance,
-      classSessions,
-    );
+    await _saveLocal();
     await _appendRow('ClassSessions', session.toRow());
+  }
+
+  Future<void> addGradeLevel(GradeLevel grade) async {
+    gradeLevels.add(grade);
+    notifyListeners();
+    await _saveLocal();
+    await _appendRow('GradeLevels', grade.toRow());
+  }
+
+  Future<void> addStudentGrade(StudentGrade grade) async {
+    studentGrades.add(grade);
+    notifyListeners();
+    await _saveLocal();
+    await _appendRow('StudentGrades', grade.toRow());
   }
 
   Future<void> updateClassSession(ClassSession session) async {
@@ -459,12 +520,7 @@ class SheetsService extends ChangeNotifier {
     if (index != -1) {
       classSessions[index] = session;
       notifyListeners();
-      await _localStorage.saveData(
-        members,
-        transactions,
-        attendance,
-        classSessions,
-      );
+      await _saveLocal();
 
       if (_sheetsApi != null && _spreadsheetId != null) {
         final rowIndex = index + 2;
@@ -489,12 +545,7 @@ class SheetsService extends ChangeNotifier {
     if (index != -1) {
       members[index] = member;
       notifyListeners();
-      await _localStorage.saveData(
-        members,
-        transactions,
-        attendance,
-        classSessions,
-      );
+      await _saveLocal();
 
       if (_sheetsApi != null && _spreadsheetId != null) {
         final rowIndex = index + 2;

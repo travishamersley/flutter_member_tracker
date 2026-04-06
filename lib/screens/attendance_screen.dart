@@ -535,15 +535,30 @@ class _ActiveClassScreenState extends State<ActiveClassScreen> {
                                   child: const Text("In Only"),
                                 ),
                               ),
-                              // Custom Payment
-                              IconButton.filledTonal(
-                                onPressed: () =>
-                                    _showCustomPaymentDialog(context, member),
-                                icon: const Icon(Icons.payments),
-                                tooltip: "Custom Payment",
+                                // Custom Payment
+                                IconButton.filledTonal(
+                                  onPressed: () =>
+                                      _showCustomPaymentDialog(context, member),
+                                  icon: const Icon(Icons.payments),
+                                  tooltip: "Custom Payment",
+                                ),
+                              ],
+                            ),
+                            if (widget.controller.gradeLevels.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _showGradeDialog(context, member),
+                                  icon: const Icon(Icons.star, color: Colors.amber),
+                                  label: const Text("Grade Student & Check In"),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.amber.shade700,
+                                    side: BorderSide(color: Colors.amber.shade700),
+                                  ),
+                                ),
                               ),
                             ],
-                          ),
                       ],
                     ),
                   ),
@@ -639,6 +654,86 @@ class _ActiveClassScreenState extends State<ActiveClassScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showGradeDialog(BuildContext context, dynamic member) async {
+    String? selectedGradeId = widget.controller.gradeLevels.first.id;
+    final notesController = TextEditingController();
+    final areasController = TextEditingController();
+    final feeController = TextEditingController(text: "0.00");
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text("Grade ${member.firstName}"),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: selectedGradeId,
+                      decoration: const InputDecoration(labelText: "Select Grade"),
+                      items: widget.controller.gradeLevels.map((g) {
+                        return DropdownMenuItem(
+                          value: g.id,
+                          child: Text(g.name),
+                        );
+                      }).toList(),
+                      onChanged: (val) => setDialogState(() => selectedGradeId = val),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: feeController,
+                      decoration: const InputDecoration(labelText: "Grading Fee", prefixText: "\$"),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: notesController,
+                      decoration: const InputDecoration(labelText: "Notes"),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: areasController,
+                      decoration: const InputDecoration(labelText: "Areas of Improvement"),
+                      maxLines: 2,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text("Cancel"),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (selectedGradeId != null) {
+                      final fee = double.tryParse(feeController.text) ?? 0.0;
+                      await widget.controller.recordGrading(
+                        memberId: member.id,
+                        gradeId: selectedGradeId!,
+                        notes: notesController.text.trim(),
+                        areasOfImprovement: areasController.text.trim(),
+                        feeAmount: fee,
+                        classSessionId: widget.session.id, // Links grade to this session
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      setState(() {}); // update outer screen
+                    }
+                  },
+                  child: const Text("Record & Check In"),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

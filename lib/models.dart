@@ -351,6 +351,7 @@ class ClassAttendance {
   final DateTime date;
   final String? classSessionId; // New field linking to specific session
   final String? classType; // Deprecated/Legacy ("Wednesday1", etc.)
+  final bool isGrading;
 
   ClassAttendance({
     required this.id,
@@ -358,12 +359,14 @@ class ClassAttendance {
     required this.date,
     this.classSessionId,
     this.classType,
+    this.isGrading = false,
   });
 
   factory ClassAttendance.create({
     required String memberId,
     String? classSessionId,
     String? classType,
+    bool isGrading = false,
   }) {
     return ClassAttendance(
       id: const Uuid().v4(),
@@ -371,6 +374,7 @@ class ClassAttendance {
       date: DateTime.now(),
       classSessionId: classSessionId,
       classType: classType,
+      isGrading: isGrading,
     );
   }
 
@@ -384,6 +388,11 @@ class ClassAttendance {
 
     String? sessionId;
     if (row.length > 4) sessionId = row[4]?.toString();
+    
+    bool isG = false;
+    if (row.length > 5) {
+      isG = row[5].toString().toLowerCase() == 'true';
+    }
 
     return ClassAttendance(
       id: row[0],
@@ -391,6 +400,7 @@ class ClassAttendance {
       date: _parseDate(row[2].toString()) ?? DateTime.now(),
       classType: legacyType,
       classSessionId: sessionId,
+      isGrading: isG,
     );
   }
 
@@ -401,6 +411,93 @@ class ClassAttendance {
       date.toIso8601String(),
       classType ?? "",
       classSessionId ?? "",
+      isGrading.toString(),
+    ];
+  }
+}
+
+class GradeLevel {
+  final String id;
+  final String name;
+
+  GradeLevel({
+    required this.id,
+    required this.name,
+  });
+
+  factory GradeLevel.create({required String name}) {
+    return GradeLevel(
+      id: const Uuid().v4(),
+      name: name,
+    );
+  }
+
+  factory GradeLevel.fromRow(List<dynamic> row) {
+    if (row.length < 2) throw Exception("Invalid row received for GradeLevel");
+    return GradeLevel(
+      id: row[0].toString(),
+      name: row[1].toString(),
+    );
+  }
+
+  List<dynamic> toRow() {
+    return [id, name];
+  }
+}
+
+class StudentGrade {
+  final String id;
+  final String memberId;
+  final String gradeId;
+  final DateTime date;
+  final String notes;
+  final String areasOfImprovement;
+
+  StudentGrade({
+    required this.id,
+    required this.memberId,
+    required this.gradeId,
+    required this.date,
+    this.notes = "",
+    this.areasOfImprovement = "",
+  });
+
+  factory StudentGrade.create({
+    required String memberId,
+    required String gradeId,
+    String notes = "",
+    String areasOfImprovement = "",
+  }) {
+    return StudentGrade(
+      id: const Uuid().v4(),
+      memberId: memberId,
+      gradeId: gradeId,
+      date: DateTime.now(),
+      notes: notes,
+      areasOfImprovement: areasOfImprovement,
+    );
+  }
+
+  factory StudentGrade.fromRow(List<dynamic> row) {
+    if (row.length < 4) throw Exception("Invalid row received for StudentGrade");
+    return StudentGrade(
+      id: row[0].toString(),
+      memberId: row[1].toString(),
+      gradeId: row[2].toString(),
+      date: _parseDate(row[3].toString()) ?? DateTime.now(),
+      notes: row.length > 4 ? row[4].toString() : "",
+      areasOfImprovement: row.length > 5 ? row[5].toString() : "",
+    );
+  }
+
+  List<dynamic> toRow() {
+    return [
+      id,
+      memberId,
+      gradeId,
+      date.toIso8601String(),
+      notes,
+      areasOfImprovement,
     ];
   }
 }

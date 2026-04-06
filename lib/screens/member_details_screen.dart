@@ -40,13 +40,14 @@ class _MemberDetailsScreenState extends State<MemberDetailsScreen> {
         title: Text("${widget.member.firstName} ${widget.member.lastName}"),
       ),
       body: DefaultTabController(
-        length: 2,
+        length: 3,
         child: Column(
           children: [
             _buildProfileHeader(context, balance),
             const TabBar(
               tabs: [
                 Tab(text: "History"),
+                Tab(text: "Gradings"),
                 Tab(text: "Profile"),
               ],
             ),
@@ -54,6 +55,7 @@ class _MemberDetailsScreenState extends State<MemberDetailsScreen> {
               child: TabBarView(
                 children: [
                   _buildHistoryTab(transactions, attendance),
+                  _buildGradingsTab(),
                   _buildProfileTab(),
                 ],
               ),
@@ -142,7 +144,80 @@ class _MemberDetailsScreenState extends State<MemberDetailsScreen> {
     );
   }
 
+  Widget _buildGradingsTab() {
+    final studentGrades = widget.controller.studentGrades
+        .where((g) => g.memberId == widget.member.id)
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _sectionHeader("Grading History"),
+        if (studentGrades.isEmpty)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text("No gradings recorded yet"),
+            ),
+          ),
+        ...studentGrades.map((g) {
+          final gradeName = widget.controller.gradeLevels.firstWhere(
+            (lvl) => lvl.id == g.gradeId,
+            orElse: () => GradeLevel(id: '', name: 'Unknown'),
+          ).name;
+
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        gradeName,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      Text(g.date.toIso8601String().split('T').first),
+                    ],
+                  ),
+                  const Divider(),
+                  if (g.notes.isNotEmpty) ...[
+                    const Text("Notes:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    Text(g.notes),
+                    const SizedBox(height: 8),
+                  ],
+                  if (g.areasOfImprovement.isNotEmpty) ...[
+                    const Text("Areas of Improvement:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    Text(g.areasOfImprovement),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Widget _buildProfileTab() {
+    final studentGrades = widget.controller.studentGrades
+        .where((g) => g.memberId == widget.member.id)
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    String currentGradeName = "None";
+    if (studentGrades.isNotEmpty) {
+      final currentGradeId = studentGrades.first.gradeId;
+      final grade = widget.controller.gradeLevels.firstWhere(
+        (g) => g.id == currentGradeId,
+        orElse: () => GradeLevel(id: '', name: 'Unknown Grade'),
+      );
+      currentGradeName = grade.name;
+    }
+
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -150,6 +225,7 @@ class _MemberDetailsScreenState extends State<MemberDetailsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _sectionHeader("Personal Details"),
+            _infoRow("Current Grade", currentGradeName),
             _infoRow(
               "Date of Birth",
               widget.member.dob.toIso8601String().split('T').first,

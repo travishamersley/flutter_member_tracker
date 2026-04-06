@@ -7,6 +7,8 @@ class LocalStorageService {
   static const String _transactionsKey = 'local_transactions_data';
   static const String _attendanceKey = 'local_attendance_data';
   static const String _classSessionsKey = 'local_class_sessions_data';
+  static const String _gradeLevelsKey = 'local_grade_levels_data';
+  static const String _studentGradesKey = 'local_student_grades_data';
 
   Future<void> saveMembers(List<Member> members) async {
     final prefs = await SharedPreferences.getInstance();
@@ -28,21 +30,17 @@ class LocalStorageService {
     }
   }
 
-  // Helper: We need to ensure Models support JSON serialization.
-  // Currently they have fromRow (List) and toRow (List).
-  // I will just store the List<List<dynamic>> directly to avoid creating new serialization logic if possible,
-  // or just Map<String, dynamic>.
-  // Keeping it aligned with Sheets "Row" format is easiest for compatibility.
-
   Future<void> saveData(
     List<Member> members,
     List<Transaction> transactions,
     List<ClassAttendance> attendance,
     List<ClassSession> classSessions,
+    [List<GradeLevel>? gradeLevels,
+    List<StudentGrade>? studentGrades,]
   ) async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Save Members as List of Rows
+    // Save Members
     final memberRows = members.map((m) => m.toRow()).toList();
     await prefs.setString(_membersKey, json.encode(memberRows));
 
@@ -57,6 +55,18 @@ class LocalStorageService {
     // Save Class Sessions
     final sessionRows = classSessions.map((s) => s.toRow()).toList();
     await prefs.setString(_classSessionsKey, json.encode(sessionRows));
+
+    // Save Grade Levels
+    if (gradeLevels != null) {
+      final gradeLevelRows = gradeLevels.map((g) => g.toRow()).toList();
+      await prefs.setString(_gradeLevelsKey, json.encode(gradeLevelRows));
+    }
+
+    // Save Student Grades
+    if (studentGrades != null) {
+      final studentGradeRows = studentGrades.map((g) => g.toRow()).toList();
+      await prefs.setString(_studentGradesKey, json.encode(studentGradeRows));
+    }
   }
 
   Future<Map<String, List<dynamic>>> loadAllData() async {
@@ -66,11 +76,15 @@ class LocalStorageService {
     final transactionsStr = prefs.getString(_transactionsKey);
     final attendanceStr = prefs.getString(_attendanceKey);
     final classSessionsStr = prefs.getString(_classSessionsKey);
+    final gradeLevelsStr = prefs.getString(_gradeLevelsKey);
+    final studentGradesStr = prefs.getString(_studentGradesKey);
 
     List<Member> members = [];
     List<Transaction> transactions = [];
     List<ClassAttendance> attendance = [];
     List<ClassSession> classSessions = [];
+    List<GradeLevel> gradeLevels = [];
+    List<StudentGrade> studentGrades = [];
 
     if (membersStr != null) {
       try {
@@ -100,11 +114,27 @@ class LocalStorageService {
       } catch (_) {}
     }
 
+    if (gradeLevelsStr != null) {
+      try {
+        final List<dynamic> rows = json.decode(gradeLevelsStr);
+        gradeLevels = rows.map((r) => GradeLevel.fromRow(r)).toList();
+      } catch (_) {}
+    }
+
+    if (studentGradesStr != null) {
+      try {
+        final List<dynamic> rows = json.decode(studentGradesStr);
+        studentGrades = rows.map((r) => StudentGrade.fromRow(r)).toList();
+      } catch (_) {}
+    }
+
     return {
       'members': members,
       'transactions': transactions,
       'attendance': attendance,
       'classSessions': classSessions,
+      'gradeLevels': gradeLevels,
+      'studentGrades': studentGrades,
     };
   }
 }

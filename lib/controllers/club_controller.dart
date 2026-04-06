@@ -26,6 +26,8 @@ class ClubController extends ChangeNotifier {
   List<ClassSession> get sessions =>
       List.of(_sheetsService.classSessions)
         ..sort((a, b) => b.dateTime.compareTo(a.dateTime));
+  List<GradeLevel> get gradeLevels => _sheetsService.gradeLevels;
+  List<StudentGrade> get studentGrades => _sheetsService.studentGrades;
 
   String? get spreadsheetUrl => _sheetsService.spreadsheetUrl;
   String? get lastError => _sheetsService.lastError;
@@ -145,6 +147,52 @@ class ClubController extends ChangeNotifier {
     await checkIn(memberId, classSessionId);
   }
 
+  Future<void> addGradeLevel(String name) async {
+    final grade = GradeLevel.create(name: name);
+    await _sheetsService.addGradeLevel(grade);
+  }
+
+  Future<void> recordGrading({
+    required String memberId,
+    required String gradeId,
+    required String notes,
+    required String areasOfImprovement,
+    required double feeAmount,
+    String? classSessionId,
+  }) async {
+    final grade = gradeLevels.firstWhere(
+      (g) => g.id == gradeId,
+      orElse: () => GradeLevel(id: '', name: 'Unknown Grade'),
+    );
+
+    final studentGrade = StudentGrade.create(
+      memberId: memberId,
+      gradeId: gradeId,
+      notes: notes,
+      areasOfImprovement: areasOfImprovement,
+    );
+    await _sheetsService.addStudentGrade(studentGrade);
+
+    if (feeAmount > 0) {
+      final transaction = Transaction.create(
+        memberId: memberId,
+        amount: feeAmount,
+        description: "Grading Fee - ${grade.name}",
+        classSessionId: classSessionId,
+      );
+      await _sheetsService.addTransaction(transaction);
+    }
+
+    if (classSessionId != null) {
+      final checkIn = ClassAttendance.create(
+        memberId: memberId,
+        classSessionId: classSessionId,
+        isGrading: true, // Waive class fee
+      );
+      await _sheetsService.addAttendance(checkIn);
+    }
+  }
+
   Future<void> createClassForNow() async {
     // If there is already an active session, maybe we should auto-close it?
     // Or just let user create another one (no restriction requested).
@@ -214,6 +262,11 @@ class ClubController extends ChangeNotifier {
     );
     for (var a in attendance) {
       if (rawBalances.containsKey(a.memberId)) {
+        if (a.isGrading) {
+          // Waive the normal class fee when grading
+          continue;
+        }
+
         if (a.classSessionId != null && a.classSessionId!.isNotEmpty) {
           // Valid new session attendance
           rawBalances[a.memberId] = (rawBalances[a.memberId] ?? 0) - classPrice;

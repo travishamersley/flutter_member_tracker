@@ -3,6 +3,7 @@ import 'package:membership_tracker/controllers/club_controller.dart';
 import 'package:membership_tracker/screens/attendance_screen.dart';
 import 'package:membership_tracker/screens/financials_screen.dart';
 import 'package:membership_tracker/screens/members_screen.dart';
+import 'package:membership_tracker/screens/grade_levels_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -107,6 +108,20 @@ class DashboardScreen extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) =>
                             FinancialsScreen(controller: controller),
+                      ),
+                    );
+                  },
+                ),
+                _buildActionButton(
+                  context,
+                  "Grade Levels",
+                  Icons.grade,
+                  () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            GradeLevelsScreen(controller: controller),
                       ),
                     );
                   },
