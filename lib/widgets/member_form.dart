@@ -1,26 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:membership_tracker/models.dart';
+import 'package:membership_tracker/controllers/club_controller.dart';
+import 'package:membership_tracker/screens/consent_screen.dart';
 
 class MemberForm extends StatefulWidget {
-  final Function(
-    String firstName,
-    String lastName,
-    String address,
-    String email,
-    DateTime dob,
-    String mobile,
-    String homePhone,
-    String emergencyContact,
-    MedicalHistory medicalHistory,
-    bool hasBeenSuspended,
-    String? suspendedDetails,
-    String heardAbout,
-    String? legalGuardian,
-    bool consentSigned,
-  )
-  onSubmit;
+  final Member? existingMember;
+  final ClubController controller;
+  final Function(Member) onSubmit;
 
-  const MemberForm({super.key, required this.onSubmit});
+  const MemberForm({
+    super.key,
+    this.existingMember,
+    required this.controller,
+    required this.onSubmit,
+  });
 
   @override
   State<MemberForm> createState() => _MemberFormState();
@@ -38,7 +31,7 @@ class _MemberFormState extends State<MemberForm> {
   final _homePhoneController = TextEditingController();
   final _emergencyContactController = TextEditingController();
   final _suspendedDetailsController = TextEditingController();
-  final _heardAboutController = TextEditingController(); // Or dropdown?
+  final _heardAboutController = TextEditingController();
   final _legalGuardianController = TextEditingController();
   final _otherMedicalDetailsController = TextEditingController();
 
@@ -57,6 +50,46 @@ class _MemberFormState extends State<MemberForm> {
 
   bool _hasBeenSuspended = false;
   bool _consentSigned = false;
+  String? _consentSignaturePath;
+  String? _consentPhotoPath;
+  DateTime? _consentDate;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.existingMember != null) {
+      final m = widget.existingMember!;
+      _firstNameController.text = m.firstName;
+      _lastNameController.text = m.lastName;
+      _addressController.text = m.address;
+      _emailController.text = m.email;
+      _mobileController.text = m.mobile;
+      _homePhoneController.text = m.homePhone;
+      _emergencyContactController.text = m.emergencyContact;
+      _suspendedDetailsController.text = m.suspendedDetails ?? "";
+      _heardAboutController.text = m.heardAbout;
+      _legalGuardianController.text = m.legalGuardian ?? "";
+      
+      _selectedDob = m.dob;
+      _hasBeenSuspended = m.hasBeenSuspended;
+      _consentSigned = m.consentSigned;
+      _consentSignaturePath = m.consentSignaturePath;
+      _consentPhotoPath = m.consentPhotoPath;
+      _consentDate = m.consentDate;
+
+      final med = m.medicalHistory;
+      _backInjury = med.backInjury;
+      _hernia = med.hernia;
+      _epilepsy = med.epilepsy;
+      _allergies = med.allergies;
+      _heartCondition = med.heartCondition;
+      _physicalDisability = med.physicalDisability;
+      _asthma = med.asthma;
+      _psychological = med.psychological;
+      _otherMedical = med.other;
+      _otherMedicalDetailsController.text = med.otherDetails ?? "";
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -82,16 +115,16 @@ class _MemberFormState extends State<MemberForm> {
                   child: _buildTextField(
                     _lastNameController,
                     "Surname",
-                    required: true,
+                    required: false,
                   ),
                 ),
               ],
             ),
-            _buildTextField(_addressController, "Address", required: true),
+            _buildTextField(_addressController, "Address", required: false),
             _buildTextField(
               _emailController,
               "Email",
-              required: true,
+              required: false,
               email: true,
             ),
 
@@ -118,7 +151,7 @@ class _MemberFormState extends State<MemberForm> {
               _buildTextField(
                 _legalGuardianController,
                 "Legal Parent/Guardian",
-                required: true,
+                required: false,
               ),
 
             _sectionHeader("Contact Info"),
@@ -198,7 +231,7 @@ class _MemberFormState extends State<MemberForm> {
               _buildTextField(
                 _otherMedicalDetailsController,
                 "Other Medical Details",
-                required: true,
+                required: false,
               ),
 
             _sectionHeader("Other Information"),
@@ -213,7 +246,7 @@ class _MemberFormState extends State<MemberForm> {
               _buildTextField(
                 _suspendedDetailsController,
                 "Details of suspension/refusal",
-                required: true,
+                required: false,
               ),
 
             _buildTextField(
@@ -223,16 +256,43 @@ class _MemberFormState extends State<MemberForm> {
             ), // "where did you hear..."
 
             const SizedBox(height: 16),
-            CheckboxListTile(
-              title: const Text(
-                "I have read and signed the informed consent and participation commitment form.",
+            if (_consentSigned || _consentSignaturePath != null)
+              ListTile(
+                leading: const Icon(Icons.verified, color: Colors.green),
+                title: const Text("Consent Document Signed"),
+                subtitle: Text("Signed on: ${_consentDate != null ? _consentDate!.toIso8601String().split('T').first : 'Unknown Date'}"),
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.draw),
+                  label: const Text("Sign Consent Document"),
+                  onPressed: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ConsentScreen(documentText: widget.controller.consentDocumentText),
+                      ),
+                    );
+                    if (result != null && result is Map) {
+                      setState(() {
+                        _consentSigned = true;
+                        _consentSignaturePath = result['signaturePath'];
+                        _consentPhotoPath = result['photoPath'];
+                        _consentDate = result['date'];
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Consent signed successfully!")),
+                      );
+                    }
+                  },
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    foregroundColor: Colors.blueAccent,
+                  ),
+                ),
               ),
-              value: _consentSigned,
-              onChanged: (val) => setState(() => _consentSigned = val!),
-              subtitle: _consentSigned
-                  ? null
-                  : const Text("Required", style: TextStyle(color: Colors.red)),
-            ),
 
             const SizedBox(height: 24),
             SizedBox(
@@ -332,19 +392,6 @@ class _MemberFormState extends State<MemberForm> {
 
   void _submit() {
     if (_formKey.currentState!.validate()) {
-      if (_selectedDob == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Please select Date of Birth")),
-        );
-        return;
-      }
-      if (!_consentSigned) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Consent must be signed")));
-        return;
-      }
-
       final medicalHistory = MedicalHistory(
         backInjury: _backInjury,
         hernia: _hernia,
@@ -360,22 +407,52 @@ class _MemberFormState extends State<MemberForm> {
             : null,
       );
 
-      widget.onSubmit(
-        _firstNameController.text,
-        _lastNameController.text,
-        _addressController.text,
-        _emailController.text,
-        _selectedDob!,
-        _mobileController.text,
-        _homePhoneController.text,
-        _emergencyContactController.text,
-        medicalHistory,
-        _hasBeenSuspended,
-        _hasBeenSuspended ? _suspendedDetailsController.text : null,
-        _heardAboutController.text,
-        _isUnder18() ? _legalGuardianController.text : null,
-        _consentSigned,
-      );
+      final member = widget.existingMember != null
+          ? Member(
+              id: widget.existingMember!.id,
+              firstName: _firstNameController.text,
+              lastName: _lastNameController.text,
+              address: _addressController.text,
+              email: _emailController.text,
+              dob: _selectedDob ?? DateTime.now(),
+              mobile: _mobileController.text,
+              homePhone: _homePhoneController.text,
+              emergencyContact: _emergencyContactController.text,
+              medicalHistory: medicalHistory,
+              hasBeenSuspended: _hasBeenSuspended,
+              suspendedDetails: _hasBeenSuspended ? _suspendedDetailsController.text : null,
+              heardAbout: _heardAboutController.text,
+              legalGuardian: _isUnder18() ? _legalGuardianController.text : null,
+              consentSigned: _consentSigned,
+              consentSignaturePath: _consentSignaturePath,
+              consentPhotoPath: _consentPhotoPath,
+              consentDate: _consentDate,
+              consentDocText: widget.controller.consentDocumentText,
+              familyGroupId: widget.existingMember!.familyGroupId,
+              balance: widget.existingMember!.balance,
+            )
+          : Member.create(
+              firstName: _firstNameController.text,
+              lastName: _lastNameController.text,
+              address: _addressController.text,
+              email: _emailController.text,
+              dob: _selectedDob ?? DateTime.now(),
+              mobile: _mobileController.text,
+              homePhone: _homePhoneController.text,
+              emergencyContact: _emergencyContactController.text,
+              medicalHistory: medicalHistory,
+              hasBeenSuspended: _hasBeenSuspended,
+              suspendedDetails: _hasBeenSuspended ? _suspendedDetailsController.text : null,
+              heardAbout: _heardAboutController.text,
+              legalGuardian: _isUnder18() ? _legalGuardianController.text : null,
+              consentSigned: _consentSigned,
+              consentSignaturePath: _consentSignaturePath,
+              consentPhotoPath: _consentPhotoPath,
+              consentDate: _consentDate,
+              consentDocText: widget.controller.consentDocumentText,
+            );
+
+      widget.onSubmit(member);
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:membership_tracker/controllers/club_controller.dart';
 import 'package:membership_tracker/models.dart';
+import 'package:membership_tracker/widgets/member_form.dart';
 
 class MemberDetailsScreen extends StatefulWidget {
   final ClubController controller;
@@ -38,6 +39,12 @@ class _MemberDetailsScreenState extends State<MemberDetailsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text("${widget.member.firstName} ${widget.member.lastName}"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: () => _showEditMemberDialog(context),
+          ),
+        ],
       ),
       body: DefaultTabController(
         length: 3,
@@ -283,16 +290,7 @@ class _MemberDetailsScreenState extends State<MemberDetailsScreen> {
 
             const SizedBox(height: 32),
             OutlinedButton.icon(
-              onPressed: () {
-                // Edit Logic
-                // We should probably reuse MemberForm for editing too
-                // For now, I'll just leave this as is or implement edit later if requested
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text("Edit functionality to be implemented"),
-                  ),
-                );
-              },
+              onPressed: () => _showEditMemberDialog(context),
               icon: const Icon(Icons.edit),
               label: const Text("Edit Details"),
             ),
@@ -594,6 +592,27 @@ class _MemberDetailsScreenState extends State<MemberDetailsScreen> {
             child: const Text("Pay"),
           ),
         ],
+      ),
+    );
+  }
+  void _showEditMemberDialog(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text("Edit Member")),
+          body: MemberForm(
+            existingMember: widget.member,
+            controller: widget.controller,
+            onSubmit: (updatedMember) async {
+              await widget.controller.updateMember(updatedMember);
+              if (!context.mounted) return;
+              Navigator.pop(context);
+              setState(() {}); // Refresh view
+            },
+          ),
+        ),
       ),
     );
   }

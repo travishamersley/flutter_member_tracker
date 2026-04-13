@@ -98,20 +98,41 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       );
     } else {
       // No Active Class - "Start Class" Button
-      return SizedBox(
-        height: 160,
-        child: ElevatedButton.icon(
-          onPressed: _startClass,
-          icon: const Icon(Icons.play_arrow, size: 48),
-          label: const Text("START CLASS", style: TextStyle(fontSize: 24)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green[700], // Darker green for contrast
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 100,
+            child: ElevatedButton.icon(
+              onPressed: () => _startSession(isGrading: false),
+              icon: const Icon(Icons.play_arrow, size: 36),
+              label: const Text("START CLASS", style: TextStyle(fontSize: 20)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green[700],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
             ),
           ),
-        ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 100,
+            child: ElevatedButton.icon(
+              onPressed: () => _startSession(isGrading: true),
+              icon: const Icon(Icons.star, size: 36),
+              label: const Text("START GRADING", style: TextStyle(fontSize: 20)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber[700],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ),
+        ],
       );
     }
   }
@@ -280,9 +301,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             // Debit
-                            const Text(
-                              "Class Fee: -\$10.00",
-                              style: TextStyle(color: Colors.red),
+                            Text(
+                              "${session.isGrading ? 'Grading' : 'Class'} Fee: -\$${widget.controller.classPrice.toStringAsFixed(2)}",
+                              style: const TextStyle(color: Colors.red),
                             ),
                             // Payment
                             if (payments.isNotEmpty)
@@ -319,12 +340,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     ).then((_) => setState(() {}));
   }
 
-  Future<void> _startClass() async {
+  Future<void> _startSession({required bool isGrading}) async {
+    final title = isGrading ? "Start Grading" : "Start Class";
+    final message = isGrading ? "Start a new grading session now?" : "Start a new class now?";
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Start Class"),
-        content: const Text("Start a new class now?"),
+        title: Text(title),
+        content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -339,7 +363,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
 
     if (confirm == true) {
-      await widget.controller.createClassForNow();
+      await widget.controller.createClassForNow(isGrading: isGrading);
       setState(() {});
 
       // Auto-navigate to the new active session
@@ -438,129 +462,133 @@ class _ActiveClassScreenState extends State<ActiveClassScreen> {
                 final member = members[index];
                 final isCheckedIn = attendedIds.contains(member.id);
                 // We show balance here for active check-in context
+                final hasPaid = widget.controller.hasPaidForSession(member.id, widget.session.id);
                 final balance = widget.controller.getMemberBalance(member.id);
 
                 Color balanceColor = Colors.grey;
                 if (balance > 0) balanceColor = Colors.green;
                 if (balance < 0) balanceColor = Colors.red;
 
+                Widget trailingWidget;
+
+                if (widget.session.isGrading) {
+                  if (isCheckedIn) {
+                    trailingWidget = const Chip(
+                      label: Text("Graded", style: TextStyle(color: Colors.white, fontSize: 12)),
+                      backgroundColor: Colors.green,
+                      visualDensity: VisualDensity.compact,
+                    );
+                  } else {
+                    trailingWidget = OutlinedButton.icon(
+                      onPressed: () => _showGradeDialog(context, member),
+                      icon: const Icon(Icons.star, color: Colors.amber, size: 16),
+                      label: const Text("Grade", style: TextStyle(fontSize: 12)),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: Colors.amber.shade700,
+                        side: BorderSide(color: Colors.amber.shade700),
+                      ),
+                    );
+                  }
+                } else {
+                  if (isCheckedIn && hasPaid) {
+                    trailingWidget = const Chip(
+                      label: Text("Done", style: TextStyle(color: Colors.white, fontSize: 12)),
+                      backgroundColor: Colors.green,
+                      visualDensity: VisualDensity.compact,
+                    );
+                  } else if (isCheckedIn && !hasPaid) {
+                    trailingWidget = Row(
+                       mainAxisSize: MainAxisSize.min,
+                       children: [
+                         const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                         const SizedBox(width: 8),
+                         ElevatedButton(
+                           onPressed: () async {
+                              await widget.controller.recordPayment(member.id, widget.controller.classPrice, "Class Payment", widget.session.id);
+                              setState(() {});
+                           },
+                           onLongPress: () => _showCustomPaymentDialog(context, member),
+                           style: ElevatedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              backgroundColor: Colors.blueAccent,
+                              foregroundColor: Colors.white,
+                           ),
+                           child: Text("Pay \$${widget.controller.classPrice.toInt()}"),
+                         ),
+                       ],
+                    );
+                  } else {
+                    trailingWidget = Row(
+                       mainAxisSize: MainAxisSize.min,
+                       children: [
+                         OutlinedButton(
+                           onPressed: () async {
+                              await widget.controller.checkIn(member.id, widget.session.id);
+                              setState(() {});
+                           },
+                           style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                           ),
+                           child: const Text("In Only", style: TextStyle(fontSize: 12)),
+                         ),
+                         const SizedBox(width: 4),
+                         ElevatedButton(
+                           onPressed: () async {
+                              await widget.controller.checkInAndPay(member.id, widget.session.id, widget.controller.classPrice);
+                              setState(() {});
+                           },
+                           onLongPress: () => _showCustomPaymentDialog(context, member),
+                           style: ElevatedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              backgroundColor: Colors.blueAccent,
+                              foregroundColor: Colors.white,
+                           ),
+                           child: Text("Pay \$${widget.controller.classPrice.toInt()} & In", style: const TextStyle(fontSize: 12)),
+                         ),
+                       ],
+                    );
+                  }
+                }
+
                 return Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
+                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                    title: InkWell(
+                      onTap: () => _showCustomPaymentDialog(context, member),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
                               "${member.firstName} ${member.lastName}",
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: balanceColor.withValues(alpha: 0.1),
-                                border: Border.all(color: balanceColor),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                "\$${balance.toStringAsFixed(2)}",
-                                style: TextStyle(
-                                  color: balanceColor,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        if (isCheckedIn)
+                          ),
                           Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            color: Colors.green.withValues(alpha: 0.1),
-                            child: const Center(
-                              child: Text(
-                                "Check In Complete",
-                                style: TextStyle(
-                                  color: Colors.green,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: balanceColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              "\$${balance.toStringAsFixed(2)}",
+                              style: TextStyle(
+                                 color: balanceColor,
+                                 fontWeight: FontWeight.bold,
+                                 fontSize: 12,
                               ),
                             ),
-                          )
-                        else
-                          Row(
-                            children: [
-                              Expanded(
-                                flex: 2,
-                                child: ElevatedButton.icon(
-                                  onPressed: () async {
-                                    await widget.controller.checkInAndPay(
-                                      member.id,
-                                      widget.session.id,
-                                      10.0,
-                                    );
-                                    setState(() {});
-                                  },
-                                  icon: const Icon(Icons.attach_money),
-                                  label: const Text("Pay \$10 & In"),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.blueAccent,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                flex: 1,
-                                child: OutlinedButton(
-                                  onPressed: () async {
-                                    await widget.controller.checkIn(
-                                      member.id,
-                                      widget.session.id,
-                                    );
-                                    setState(() {});
-                                  },
-                                  child: const Text("In Only"),
-                                ),
-                              ),
-                                // Custom Payment
-                                IconButton.filledTonal(
-                                  onPressed: () =>
-                                      _showCustomPaymentDialog(context, member),
-                                  icon: const Icon(Icons.payments),
-                                  tooltip: "Custom Payment",
-                                ),
-                              ],
-                            ),
-                            if (widget.controller.gradeLevels.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  onPressed: () => _showGradeDialog(context, member),
-                                  icon: const Icon(Icons.star, color: Colors.amber),
-                                  label: const Text("Grade Student & Check In"),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.amber.shade700,
-                                    side: BorderSide(color: Colors.amber.shade700),
-                                  ),
-                                ),
-                              ),
-                            ],
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
+                    trailing: trailingWidget,
                   ),
                 );
               },
@@ -650,7 +678,26 @@ class _ActiveClassScreenState extends State<ActiveClassScreen> {
                 setState(() {}); // Refresh balance
               }
             },
-            child: const Text("Add Funds"),
+            child: const Text("Pay Only"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final amount = double.tryParse(amountController.text);
+              if (amount != null) {
+                await widget.controller.recordPayment(
+                  member.id,
+                  amount,
+                  descriptionController.text,
+                );
+                await widget.controller.checkIn(
+                  member.id,
+                  widget.session.id,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                setState(() {}); // Refresh balance & checkin state
+              }
+            },
+            child: const Text("Pay & In"),
           ),
         ],
       ),

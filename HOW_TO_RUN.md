@@ -30,11 +30,43 @@ The main target for this app is the web. To launch the application in Chrome:
 flutter run -d chrome
 ```
 
-Alternatively, if you have other devices or emulators set up, you can start the app without a specific device flag, and Flutter will prompt you to choose one:
+**Running in the Android Simulator (Emulator):**
+
+If you want to run the app in an Android emulator:
+1. List available emulators:
+   ```bash
+   flutter emulators
+   ```
+2. Launch the Android emulator (replace `<emulator_id>` with the ID from the listing):
+   ```bash
+   flutter emulators --launch <emulator_id>
+   ```
+3. Once the emulator is fully loaded, start the app:
+   ```bash
+   flutter run
+   ```
+
+**Running on a Physical Device via USB:**
+
+If you want to run the app on a physical Android device:
+1. Enable **Developer Options** and **USB Debugging** on your Android device (usually found in Settings > About phone > tap "Build number" 7 times).
+2. Connect your device to your computer via USB.
+3. If prompted on the device, tap "Allow USB debugging" to trust your computer.
+4. Verify your device is connected and recognized by running:
+   ```bash
+   flutter devices
+   ```
+5. Run the app directly on the device (replace `<device_id>` with the device ID from the previous step):
+   ```bash
+   flutter run -d <device_id>
+   ```
+
+Alternatively, if you have multiple devices or emulators set up:
 
 ```bash
 flutter run
 ```
+And Flutter will prompt you to choose which device to run on.
 
 *Note: If testing Google integration, make sure the local server port that Flutter uses for the web matches what you have set as an "Authorized JavaScript origin" in your Google Cloud platform credentials, or use a specific port:*
 ```bash

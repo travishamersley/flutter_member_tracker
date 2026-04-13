@@ -3,13 +3,15 @@ import 'package:membership_tracker/models.dart';
 import 'package:membership_tracker/services/local_storage_service.dart';
 import 'package:membership_tracker/services/data_exchange_service.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 
 class ClubController extends ChangeNotifier {
   final LocalStorageService _localStorage = LocalStorageService();
   final DataExchangeService _dataExchangeService = DataExchangeService();
 
-  static const double classPrice = 10.0;
+  double classPrice = 6.0;
+  String consentDocumentText = "I agree to participate and understand the risks involved.";
 
   bool isLoading = true;
   String? lastError;
@@ -40,6 +42,11 @@ class ClubController extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
+      final prefs = await SharedPreferences.getInstance();
+      classPrice = prefs.getDouble('classPrice') ?? 6.0;
+      consentDocumentText = prefs.getString('consentDocumentText') ?? 
+          "I agree to participate and understand the risks involved. I release the club from any liability regarding injuries sustained during training.";
+
       final data = await _localStorage.loadAllData();
       members = data['members'] as List<Member>? ?? [];
       transactions = data['transactions'] as List<Transaction>? ?? [];
@@ -67,6 +74,15 @@ class ClubController extends ChangeNotifier {
       studentGrades,
     );
     _recalculateBalances();
+    notifyListeners();
+  }
+
+  Future<void> updateSettings(double newPrice, String newConsentDoc) async {
+    classPrice = newPrice;
+    consentDocumentText = newConsentDoc;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('classPrice', newPrice);
+    await prefs.setString('consentDocumentText', newConsentDoc);
     notifyListeners();
   }
 
@@ -149,38 +165,12 @@ class ClubController extends ChangeNotifier {
   }
 
   // Data actions
-  Future<void> addMember(
-    String firstName,
-    String lastName,
-    String address,
-    String email,
-    DateTime dob,
-    String mobile,
-    String homePhone,
-    String emergencyContact,
-    MedicalHistory medicalHistory,
-    bool hasBeenSuspended,
-    String? suspendedDetails,
-    String heardAbout,
-    String? legalGuardian,
-    bool consentSigned,
-  ) async {
-    final member = Member.create(
-      firstName: firstName,
-      lastName: lastName,
-      address: address,
-      email: email,
-      dob: dob,
-      mobile: mobile,
-      homePhone: homePhone,
-      emergencyContact: emergencyContact,
-      medicalHistory: medicalHistory,
-      hasBeenSuspended: hasBeenSuspended,
-      suspendedDetails: suspendedDetails,
-      heardAbout: heardAbout,
-      legalGuardian: legalGuardian,
-      consentSigned: consentSigned,
-    );
+  bool hasPaidForSession(String memberId, String sessionId) {
+    return transactions.any((t) =>
+        t.memberId == memberId && t.classSessionId == sessionId);
+  }
+
+  Future<void> addMemberObj(Member member) async {
     members.add(member);
     await _saveLocal();
   }
@@ -268,7 +258,7 @@ class ClubController extends ChangeNotifier {
     await _saveLocal();
   }
 
-  Future<void> createClassForNow() async {
+  Future<void> createClassForNow({bool isGrading = false}) async {
     final now = DateTime.now();
     final days = {
       1: 'Mon',
@@ -283,9 +273,10 @@ class ClubController extends ChangeNotifier {
     final hour = now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
     final amPm = now.hour >= 12 ? 'PM' : 'AM';
     final minuteToken = now.minute.toString().padLeft(2, '0');
-    final name = "$dayName ${now.month}/${now.day} - $hour:$minuteToken $amPm";
+    final prefix = isGrading ? "Grading - " : "";
+    final name = "$prefix$dayName ${now.month}/${now.day} - $hour:$minuteToken $amPm";
 
-    final session = ClassSession.create(name: name);
+    final session = ClassSession.create(name: name, isGrading: isGrading);
     classSessions.add(session);
     await _saveLocal();
   }

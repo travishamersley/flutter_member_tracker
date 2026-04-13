@@ -4,6 +4,7 @@ import 'package:membership_tracker/screens/attendance_screen.dart';
 import 'package:membership_tracker/screens/financials_screen.dart';
 import 'package:membership_tracker/screens/members_screen.dart';
 import 'package:membership_tracker/screens/grade_levels_screen.dart';
+import 'package:membership_tracker/screens/settings_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   final ClubController controller;
@@ -28,7 +29,19 @@ class DashboardScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Dojo Dashboard"),
-        // Removed logout and Google cloud icons since this is local-only
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SettingsScreen(controller: controller),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),

@@ -94,6 +94,11 @@ class Member {
   String? familyGroupId;
   double balance;
 
+  String? consentSignaturePath;
+  String? consentPhotoPath;
+  DateTime? consentDate;
+  String? consentDocText;
+
   Member({
     required this.id,
     required this.firstName,
@@ -112,6 +117,10 @@ class Member {
     this.consentSigned = false,
     this.familyGroupId,
     this.balance = 0.0,
+    this.consentSignaturePath,
+    this.consentPhotoPath,
+    this.consentDate,
+    this.consentDocText,
   });
 
   factory Member.create({
@@ -130,6 +139,10 @@ class Member {
     String? legalGuardian,
     bool consentSigned = false,
     String? familyGroupId,
+    String? consentSignaturePath,
+    String? consentPhotoPath,
+    DateTime? consentDate,
+    String? consentDocText,
   }) {
     return Member(
       id: const Uuid().v4(),
@@ -148,6 +161,10 @@ class Member {
       legalGuardian: legalGuardian,
       consentSigned: consentSigned,
       familyGroupId: familyGroupId,
+      consentSignaturePath: consentSignaturePath,
+      consentPhotoPath: consentPhotoPath,
+      consentDate: consentDate,
+      consentDocText: consentDocText,
     );
   }
 
@@ -215,6 +232,10 @@ class Member {
           ? null
           : getCol(15).toString(),
       balance: 0.0,
+      consentSignaturePath: getCol(16).toString().isEmpty ? null : getCol(16).toString(),
+      consentPhotoPath: getCol(17).toString().isEmpty ? null : getCol(17).toString(),
+      consentDate: _parseDate(getCol(18).toString()),
+      consentDocText: getCol(19).toString().isEmpty ? null : getCol(19).toString(),
     );
   }
 
@@ -236,6 +257,10 @@ class Member {
       legalGuardian ?? "",
       consentSigned.toString(),
       familyGroupId ?? "",
+      consentSignaturePath ?? "",
+      consentPhotoPath ?? "",
+      consentDate?.toIso8601String() ?? "",
+      consentDocText ?? "",
     ];
   }
 }
@@ -310,20 +335,23 @@ class ClassSession {
   final String name; // e.g., "Wednesday 5:00 PM"
   final DateTime dateTime;
   final bool isCompleted;
+  final bool isGrading; // New field
 
   ClassSession({
     required this.id,
     required this.name,
     required this.dateTime,
     this.isCompleted = false,
+    this.isGrading = false,
   });
 
-  factory ClassSession.create({required String name}) {
+  factory ClassSession.create({required String name, bool isGrading = false}) {
     return ClassSession(
       id: const Uuid().v4(),
       name: name,
       dateTime: DateTime.now(),
       isCompleted: false,
+      isGrading: isGrading,
     );
   }
 
@@ -337,11 +365,14 @@ class ClassSession {
       isCompleted: (row.length > 3)
           ? (row[3].toString().toLowerCase() == 'true')
           : false,
+      isGrading: (row.length > 4)
+          ? (row[4].toString().toLowerCase() == 'true')
+          : false,
     );
   }
 
   List<dynamic> toRow() {
-    return [id, name, dateTime.toIso8601String(), isCompleted.toString()];
+    return [id, name, dateTime.toIso8601String(), isCompleted.toString(), isGrading.toString()];
   }
 }
 

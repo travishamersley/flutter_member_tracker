@@ -128,39 +128,9 @@ class _MembersScreenState extends State<MembersScreen> {
         builder: (context) => Scaffold(
           appBar: AppBar(title: const Text("Add New Member")),
           body: MemberForm(
-            onSubmit:
-                (
-                  firstName,
-                  lastName,
-                  address,
-                  email,
-                  dob,
-                  mobile,
-                  homePhone,
-                  emergencyContact,
-                  medicalHistory,
-                  hasBeenSuspended,
-                  suspendedDetails,
-                  heardAbout,
-                  legalGuardian,
-                  consentSigned,
-                ) async {
-                  await widget.controller.addMember(
-                    firstName,
-                    lastName,
-                    address,
-                    email,
-                    dob,
-                    mobile,
-                    homePhone,
-                    emergencyContact,
-                    medicalHistory,
-                    hasBeenSuspended,
-                    suspendedDetails,
-                    heardAbout,
-                    legalGuardian,
-                    consentSigned,
-                  );
+            controller: widget.controller,
+            onSubmit: (member) async {
+                  await widget.controller.addMemberObj(member);
                   if (!context.mounted) return;
                   Navigator.pop(context);
                   setState(() {}); // Refresh list
