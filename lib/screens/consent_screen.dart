@@ -105,65 +105,84 @@ class _ConsentScreenState extends State<ConsentScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Sign Consent")),
-      body: Stack(
-        children: [
-          // Hidden camera
-          if (_cameraController != null && _cameraController!.value.isInitialized)
-            Positioned(
-              top: -1000,
-              child: SizedBox(
-                width: 10,
-                height: 10,
-                child: CameraPreview(_cameraController!),
+      body: SafeArea(
+        child: Column(
+          children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                widget.documentText,
+                style: const TextStyle(fontSize: 14),
               ),
             ),
-          
-          Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    widget.documentText,
-                    style: const TextStyle(fontSize: 14),
+          ),
+          Container(
+            color: Colors.grey.shade200,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        "Sign Below:",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueAccent),
+                      ),
+                      if (_cameraController != null && _cameraController!.value.isInitialized)
+                        Row(
+                          children: [
+                            const Text("Capturing face... ", style: TextStyle(fontSize: 10, color: Colors.grey)),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: SizedBox(
+                                width: 40,
+                                height: 40,
+                                child: CameraPreview(_cameraController!),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
                   ),
                 ),
-              ),
-              Container(
-                color: Colors.grey.shade200,
-                child: Column(
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: Text("Sign Below:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-                    ),
-                    Signature(
-                      controller: _signatureController,
-                      height: 150,
-                      backgroundColor: Colors.white,
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        TextButton(
-                          onPressed: () => _signatureController.clear(),
-                          child: const Text("Clear"),
-                        ),
-                        ElevatedButton(
-                          onPressed: _isSaving ? null : _acceptAndSign,
-                          child: _isSaving
-                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator())
-                              : const Text("Accept & Sign"),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+                Signature(
+                  controller: _signatureController,
+                  height: 150,
+                  backgroundColor: Colors.white,
                 ),
-              ),
-            ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton.icon(
+                        icon: const Icon(Icons.clear, color: Colors.red),
+                        label: const Text("Clear Signature", style: TextStyle(color: Colors.red)),
+                        onPressed: () => _signatureController.clear(),
+                      ),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                        icon: const Icon(Icons.check),
+                        label: _isSaving 
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white))
+                          : const Text("Save & Continue", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        onPressed: _isSaving ? null : _acceptAndSign,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         ],
+      ),
       ),
     );
   }

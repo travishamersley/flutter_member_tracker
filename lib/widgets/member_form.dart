@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:membership_tracker/models.dart';
 import 'package:membership_tracker/controllers/club_controller.dart';
@@ -93,7 +94,8 @@ class _MemberFormState extends State<MemberForm> {
 
   @override
   Widget build(BuildContext context) {
-    return Form(
+    return SafeArea(
+      child: Form(
       key: _formKey,
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -257,10 +259,35 @@ class _MemberFormState extends State<MemberForm> {
 
             const SizedBox(height: 16),
             if (_consentSigned || _consentSignaturePath != null)
-              ListTile(
-                leading: const Icon(Icons.verified, color: Colors.green),
-                title: const Text("Consent Document Signed"),
-                subtitle: Text("Signed on: ${_consentDate != null ? _consentDate!.toIso8601String().split('T').first : 'Unknown Date'}"),
+              Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.verified, color: Colors.green),
+                    title: const Text("Consent Document Signed"),
+                    subtitle: Text("Signed on: ${_consentDate != null ? _consentDate!.toIso8601String().split('T').first : 'Unknown Date'}"),
+                  ),
+                  if (_consentSignaturePath != null && _consentSignaturePath!.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          File(_consentSignaturePath!),
+                          height: 100,
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => const Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: Text("Signature file unavailable", style: TextStyle(color: Colors.grey)),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               )
             else
               SizedBox(
@@ -305,6 +332,7 @@ class _MemberFormState extends State<MemberForm> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

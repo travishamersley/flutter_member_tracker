@@ -43,7 +43,8 @@ class DashboardScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: SingleChildScrollView(
+      body: SafeArea(
+        child: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,6 +175,7 @@ class DashboardScreen extends StatelessWidget {
                ),
           ],
         ),
+      ),
       ),
     );
   }
