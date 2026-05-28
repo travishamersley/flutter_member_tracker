@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:membership_tracker/models.dart';
 import 'package:membership_tracker/services/local_storage_service.dart';
 import 'package:membership_tracker/services/data_exchange_service.dart';
+import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
@@ -10,8 +11,16 @@ class ClubController extends ChangeNotifier {
   final LocalStorageService _localStorage = LocalStorageService();
   final DataExchangeService _dataExchangeService = DataExchangeService();
 
-  double classPrice = 6.0;
+  List<PriceRule> priceRules = [];
   String consentDocumentText = "I agree to participate and understand the risks involved.";
+
+  double getCurrentClassPrice(DateTime date) {
+    if (priceRules.isEmpty) return 6.0;
+    final pastRules = priceRules.where((r) => r.effectiveDate.isBefore(date) || r.effectiveDate.isAtSameMomentAs(date)).toList();
+    if (pastRules.isEmpty) return priceRules.first.price;
+    pastRules.sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+    return pastRules.first.price;
+  }
 
   bool isLoading = true;
   String? lastError;
@@ -43,8 +52,15 @@ class ClubController extends ChangeNotifier {
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
-      classPrice = prefs.getDouble('classPrice') ?? 6.0;
-      consentDocumentText = prefs.getString('consentDocumentText') ?? 
+
+      final rulesJson = prefs.getStringList('priceRules');
+      if (rulesJson != null) {
+        priceRules = rulesJson.map((r) => PriceRule.fromJson(jsonDecode(r))).toList();
+      } else {
+        priceRules = [PriceRule.create(price: 6.0, effectiveDate: DateTime(2000, 1, 1))];
+      }
+
+      consentDocumentText = prefs.getString('consentDocumentText') ??
           "I agree to participate and understand the risks involved. I release the club from any liability regarding injuries sustained during training.";
 
       final data = await _localStorage.loadAllData();
@@ -77,13 +93,24 @@ class ClubController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateSettings(double newPrice, String newConsentDoc) async {
-    classPrice = newPrice;
+  Future<void> updateConsentDoc(String newConsentDoc) async {
     consentDocumentText = newConsentDoc;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('classPrice', newPrice);
     await prefs.setString('consentDocumentText', newConsentDoc);
     notifyListeners();
+  }
+
+  Future<void> savePriceRules(List<PriceRule> rules) async {
+    priceRules = rules;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('priceRules', rules.map((r) => jsonEncode(r.toJson())).toList());
+    _recalculateBalances();
+    notifyListeners();
+  }
+
+  Future<void> addPriceRule(PriceRule rule) async {
+    priceRules.add(rule);
+    await savePriceRules(priceRules);
   }
 
   // --- One-Way Export ---
@@ -183,9 +210,10 @@ class ClubController extends ChangeNotifier {
   ]) async {
     final transaction = Transaction.create(
       memberId: memberId,
-      amount: amount,
+      amount: amount.abs(),
       description: description,
       classSessionId: classSessionId,
+      type: TransactionType.payment,
     );
     transactions.add(transaction);
     await _saveLocal();
@@ -197,6 +225,18 @@ class ClubController extends ChangeNotifier {
       classSessionId: classSessionId,
     );
     attendance.add(checkIn);
+    
+    double currentPrice = getCurrentClassPrice(DateTime.now());
+    if (currentPrice > 0) {
+      transactions.add(Transaction.create(
+        memberId: memberId,
+        amount: -currentPrice,
+        description: "Class Fee",
+        classSessionId: classSessionId,
+        type: TransactionType.classFee,
+      ));
+    }
+    
     await _saveLocal();
   }
 
@@ -239,9 +279,10 @@ class ClubController extends ChangeNotifier {
     if (feeAmount > 0) {
       final transaction = Transaction.create(
         memberId: memberId,
-        amount: feeAmount,
+        amount: -feeAmount.abs(),
         description: "Grading Fee - ${grade.name}",
         classSessionId: classSessionId,
+        type: TransactionType.gradingFee,
       );
       transactions.add(transaction);
     }
@@ -309,19 +350,8 @@ class ClubController extends ChangeNotifier {
       }
     }
 
-    for (var a in attendance) {
-      if (rawBalances.containsKey(a.memberId)) {
-        if (a.isGrading) {
-          continue;
-        }
-
-        if (a.classSessionId != null && a.classSessionId!.isNotEmpty) {
-          rawBalances[a.memberId] = (rawBalances[a.memberId] ?? 0) - classPrice;
-        } else {
-          rawBalances[a.memberId] = (rawBalances[a.memberId] ?? 0) - classPrice;
-        }
-      }
-    }
+    // Attendance no longer factors into balance recalculation directly.
+    // Balances are derived purely from Transactions.
 
     Map<String, double> familyTotals = {};
 
@@ -377,5 +407,15 @@ class ClubController extends ChangeNotifier {
       members[index] = member;
       await _saveLocal();
     }
+  }
+
+  // Developer Features
+  Future<void> clearClassesAndPayments() async {
+    transactions.clear();
+    attendance.clear();
+    classSessions.clear();
+    priceRules = [PriceRule.create(price: 6.0, effectiveDate: DateTime(2000, 1, 1))];
+    await savePriceRules(priceRules);
+    await _saveLocal();
   }
 }

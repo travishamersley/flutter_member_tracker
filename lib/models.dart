@@ -1,6 +1,57 @@
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
 
+enum TransactionType {
+  payment,
+  classFee,
+  gradingFee,
+  adjustment,
+  merchandise,
+  unknown
+}
+
+extension TransactionTypeExtension on TransactionType {
+  String get name => toString().split('.').last;
+  static TransactionType fromString(String str) {
+    return TransactionType.values.firstWhere(
+      (e) => e.name == str,
+      orElse: () => TransactionType.unknown,
+    );
+  }
+}
+
+class PriceRule {
+  final String id;
+  final double price;
+  final DateTime effectiveDate;
+
+  PriceRule({
+    required this.id,
+    required this.price,
+    required this.effectiveDate,
+  });
+
+  factory PriceRule.create({required double price, required DateTime effectiveDate}) {
+    return PriceRule(
+      id: const Uuid().v4(),
+      price: price,
+      effectiveDate: effectiveDate,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'price': price,
+    'effectiveDate': effectiveDate.toIso8601String(),
+  };
+
+  factory PriceRule.fromJson(Map<String, dynamic> json) => PriceRule(
+    id: json['id'],
+    price: (json['price'] as num).toDouble(),
+    effectiveDate: DateTime.parse(json['effectiveDate']),
+  );
+}
+
 class MedicalHistory {
   bool backInjury;
   bool hernia;
@@ -272,6 +323,7 @@ class Transaction {
   final DateTime date;
   final String description; // e.g. "Payment", "Class Fee"
   final String? classSessionId; // New field
+  final TransactionType type;
 
   Transaction({
     required this.id,
@@ -280,6 +332,7 @@ class Transaction {
     required this.date,
     required this.description,
     this.classSessionId,
+    this.type = TransactionType.unknown,
   });
 
   factory Transaction.create({
@@ -287,6 +340,7 @@ class Transaction {
     required double amount,
     required String description,
     String? classSessionId,
+    TransactionType type = TransactionType.unknown,
   }) {
     return Transaction(
       id: const Uuid().v4(),
@@ -295,6 +349,7 @@ class Transaction {
       date: DateTime.now(),
       description: description,
       classSessionId: classSessionId,
+      type: type,
     );
   }
 
@@ -308,13 +363,22 @@ class Transaction {
       if (sessionId == 'null' || sessionId!.isEmpty) sessionId = null;
     }
 
+    TransactionType tType = TransactionType.unknown;
+    double amt = double.tryParse(row[2].toString()) ?? 0.0;
+    if (row.length > 6) {
+      tType = TransactionTypeExtension.fromString(row[6].toString());
+    } else {
+      tType = amt > 0 ? TransactionType.payment : TransactionType.classFee;
+    }
+
     return Transaction(
       id: row[0],
       memberId: row[1],
-      amount: double.tryParse(row[2].toString()) ?? 0.0,
+      amount: amt,
       date: _parseDate(row[3].toString()) ?? DateTime.now(),
       description: row[4],
       classSessionId: sessionId,
+      type: tType,
     );
   }
 
@@ -326,6 +390,7 @@ class Transaction {
       date.toIso8601String(),
       description,
       classSessionId ?? "",
+      type.name,
     ];
   }
 }

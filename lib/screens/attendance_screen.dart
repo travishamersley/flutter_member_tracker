@@ -302,7 +302,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           children: [
                             // Debit
                             Text(
-                              "${session.isGrading ? 'Grading' : 'Class'} Fee: -\$${widget.controller.classPrice.toStringAsFixed(2)}",
+                              "${session.isGrading ? 'Grading' : 'Class'} Fee: -\$${widget.controller.getCurrentClassPrice(session.dateTime).toStringAsFixed(2)}",
                               style: const TextStyle(color: Colors.red),
                             ),
                             // Payment
@@ -505,7 +505,7 @@ class _ActiveClassScreenState extends State<ActiveClassScreen> {
                          const SizedBox(width: 8),
                          ElevatedButton(
                            onPressed: () async {
-                              await widget.controller.recordPayment(member.id, widget.controller.classPrice, "Class Payment", widget.session.id);
+                              await widget.controller.recordPayment(member.id, widget.controller.getCurrentClassPrice(widget.session.dateTime), "Class Payment", widget.session.id);
                               setState(() {});
                            },
                            onLongPress: () => _showCustomPaymentDialog(context, member),
@@ -515,7 +515,7 @@ class _ActiveClassScreenState extends State<ActiveClassScreen> {
                               backgroundColor: Colors.blueAccent,
                               foregroundColor: Colors.white,
                            ),
-                           child: Text("Pay \$${widget.controller.classPrice.toInt()}"),
+                           child: Text("Pay \$${widget.controller.getCurrentClassPrice(widget.session.dateTime).toInt()}"),
                          ),
                        ],
                     );
@@ -537,7 +537,7 @@ class _ActiveClassScreenState extends State<ActiveClassScreen> {
                          const SizedBox(width: 4),
                          ElevatedButton(
                            onPressed: () async {
-                              await widget.controller.checkInAndPay(member.id, widget.session.id, widget.controller.classPrice);
+                              await widget.controller.checkInAndPay(member.id, widget.session.id, widget.controller.getCurrentClassPrice(widget.session.dateTime));
                               setState(() {});
                            },
                            onLongPress: () => _showCustomPaymentDialog(context, member),
@@ -547,7 +547,7 @@ class _ActiveClassScreenState extends State<ActiveClassScreen> {
                               backgroundColor: Colors.blueAccent,
                               foregroundColor: Colors.white,
                            ),
-                           child: Text("Pay \$${widget.controller.classPrice.toInt()} & In", style: const TextStyle(fontSize: 12)),
+                           child: Text("Pay \$${widget.controller.getCurrentClassPrice(widget.session.dateTime).toInt()} & In", style: const TextStyle(fontSize: 12)),
                          ),
                        ],
                     );

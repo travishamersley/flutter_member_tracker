@@ -48,7 +48,7 @@ If you want to run the app in an Android emulator:
 
 **Running on a Physical Device via USB:**
 
-If you want to run the app on a physical Android device:
+If you want to run the app on a pchromehysical Android device:
 1. Enable **Developer Options** and **USB Debugging** on your Android device (usually found in Settings > About phone > tap "Build number" 7 times).
 2. Connect your device to your computer via USB.
 3. If prompted on the device, tap "Allow USB debugging" to trust your computer.
@@ -86,7 +86,7 @@ To create a production release bundle for hosting on any web server or static CD
 flutter build web
 ```
 
-This will compile your Dart code to JavaScript and place the required assets inside the `build/web/` directory. You can then copy the contents of `build/web/` to your hosting provider.
+This will compile your Dart code to JavaScript and p lace the required assets inside the `build/web/` directory. You can then copy the contents of `build/web/` to your hosting provider.
 
 ### Building for Other Platforms
 

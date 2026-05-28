@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:signature/signature.dart';
 import 'package:path_provider/path_provider.dart';
-
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:camera_linux/camera_linux.dart';
 class ConsentScreen extends StatefulWidget {
   final String documentText;
 
@@ -21,6 +24,9 @@ class _ConsentScreenState extends State<ConsentScreen> {
     exportBackgroundColor: Colors.white,
   );
   bool _isSaving = false;
+  CameraLinux? _linuxCamera;
+  Timer? _linuxPreviewTimer;
+  Uint8List? _linuxPreviewFrame;
 
   @override
   void initState() {
@@ -30,18 +36,37 @@ class _ConsentScreenState extends State<ConsentScreen> {
 
   Future<void> _initCamera() async {
     try {
-      final cameras = await availableCameras();
-      final frontCamera = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.front,
-        orElse: () => cameras.first,
-      );
-      _cameraController = CameraController(
-        frontCamera,
-        ResolutionPreset.medium,
-        enableAudio: false,
-      );
-      await _cameraController!.initialize();
-      if (mounted) setState(() {});
+      if (Platform.isLinux) {
+        _linuxCamera = CameraLinux();
+        await _linuxCamera!.initializeCamera();
+        _linuxPreviewTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) async {
+          if (!mounted) return;
+          try {
+            final base64Image = await _linuxCamera!.captureImage();
+            if (base64Image.isNotEmpty && mounted) {
+              setState(() {
+                _linuxPreviewFrame = base64Decode(base64Image);
+              });
+            }
+          } catch (e) {
+            debugPrint("Linux camera preview error: $e");
+          }
+        });
+        if (mounted) setState(() {});
+      } else {
+        final cameras = await availableCameras();
+        final frontCamera = cameras.firstWhere(
+          (c) => c.lensDirection == CameraLensDirection.front,
+          orElse: () => cameras.first,
+        );
+        _cameraController = CameraController(
+          frontCamera,
+          ResolutionPreset.medium,
+          enableAudio: false,
+        );
+        await _cameraController!.initialize();
+        if (mounted) setState(() {});
+      }
     } catch (e) {
       debugPrint("Camera init failed: $e");
     }
@@ -50,6 +75,10 @@ class _ConsentScreenState extends State<ConsentScreen> {
   @override
   void dispose() {
     _cameraController?.dispose();
+    _linuxPreviewTimer?.cancel();
+    if (_linuxCamera != null) {
+      _linuxCamera!.stopCamera();
+    }
     _signatureController.dispose();
     super.dispose();
   }
@@ -70,7 +99,14 @@ class _ConsentScreenState extends State<ConsentScreen> {
 
       // 1. Take photo
       String? photoPath;
-      if (_cameraController != null && _cameraController!.value.isInitialized) {
+      if (Platform.isLinux && _linuxCamera != null) {
+        final base64Image = await _linuxCamera!.captureImage();
+        if (base64Image.isNotEmpty) {
+          final savedPhoto = File('${tempDir.path}/photo_$timestamp.jpg');
+          await savedPhoto.writeAsBytes(base64Decode(base64Image));
+          photoPath = savedPhoto.path;
+        }
+      } else if (_cameraController != null && _cameraController!.value.isInitialized) {
         final xFile = await _cameraController!.takePicture();
         final savedPhoto = File('${tempDir.path}/photo_$timestamp.jpg');
         await File(xFile.path).copy(savedPhoto.path);
@@ -130,7 +166,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                         "Sign Below:",
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueAccent),
                       ),
-                      if (_cameraController != null && _cameraController!.value.isInitialized)
+                      if (!Platform.isLinux && _cameraController != null && _cameraController!.value.isInitialized)
                         Row(
                           children: [
                             const Text("Capturing face... ", style: TextStyle(fontSize: 10, color: Colors.grey)),
@@ -140,6 +176,22 @@ class _ConsentScreenState extends State<ConsentScreen> {
                                 width: 40,
                                 height: 40,
                                 child: CameraPreview(_cameraController!),
+                              ),
+                            ),
+                          ],
+                        )
+                      else if (Platform.isLinux && _linuxCamera != null)
+                        Row(
+                          children: [
+                            const Text("Capturing face... ", style: TextStyle(fontSize: 10, color: Colors.grey)),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: SizedBox(
+                                width: 40,
+                                height: 40,
+                                child: _linuxPreviewFrame != null 
+                                  ? Image.memory(_linuxPreviewFrame!, fit: BoxFit.cover, gaplessPlayback: true)
+                                  : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                               ),
                             ),
                           ],

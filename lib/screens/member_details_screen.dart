@@ -89,7 +89,8 @@ class _MemberDetailsScreenState extends State<MemberDetailsScreen> {
             radius: 40,
             backgroundColor: Theme.of(context).primaryColor,
             child: Text(
-              widget.member.firstName[0] + widget.member.lastName[0],
+              (widget.member.firstName.isNotEmpty ? widget.member.firstName[0] : '') +
+              (widget.member.lastName.isNotEmpty ? widget.member.lastName[0] : ''),
               style: const TextStyle(
                 fontSize: 32,
                 color: Colors.black,

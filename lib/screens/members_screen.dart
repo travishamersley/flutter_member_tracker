@@ -56,7 +56,8 @@ class _MembersScreenState extends State<MembersScreen> {
                     leading: CircleAvatar(
                       backgroundColor: Theme.of(context).primaryColor,
                       child: Text(
-                        member.firstName[0] + member.lastName[0],
+                        (member.firstName.isNotEmpty ? member.firstName[0] : '') +
+                        (member.lastName.isNotEmpty ? member.lastName[0] : ''),
                         style: const TextStyle(
                           color: Colors.black,
                           fontWeight: FontWeight.bold,
